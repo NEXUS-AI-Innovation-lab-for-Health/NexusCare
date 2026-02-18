@@ -76,8 +76,8 @@ io.on('connection', (socket: AppSocket) => {
 
     socket.on('disconnecting', () => {
         console.log(`[DECONNEXION] Utilisateur: ${socket.id}`);
-        // 'disconnecting' fires before the socket leaves its rooms,
-        // so we can broadcast to all rooms the socket was in
+        // 'disconnecting' se déclenche avant que le socket quitte ses rooms
+        // on peut donc diffuser aux rooms concernées
         for (const room of socket.rooms) {
             if (room !== socket.id) {
                 socket.broadcast.to(room).emit('user-left', socket.id);
@@ -120,7 +120,7 @@ io.on('connection', (socket: AppSocket) => {
             console.error('[CHAT] Failed to persist message:', err);
         }
 
-        // Always broadcast even if persistence fails
+        // Toujours diffuser même si la persistance échoue
         socket.broadcast.to(roomId).emit('receive-chat-message', content, senderId, new Date());
     });
 }

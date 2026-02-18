@@ -50,7 +50,7 @@ const Register: React.FC = () => {
                 const profs = await api.getProfessions();
                 if (mounted && Array.isArray(profs)) setJobs(profs);
             } catch (e) {
-                // ignore; professions list will be empty
+                // ignorer : la liste des professions sera vide
             }
         })();
         return () => { mounted = false };

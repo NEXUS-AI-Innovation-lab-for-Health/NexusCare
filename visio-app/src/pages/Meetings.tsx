@@ -115,12 +115,12 @@ const Meetings: React.FC = () => {
         setSelectedMeeting(meeting);
         setModalType('patient');
         setSaveError('');
-        // Find the current user's participant entry and their own patientRecord
+        // Recherche de l'entrée participant de l'utilisateur et de son dossier patient
         const myParticipant = meeting.participants.find(p => p.user?.id === user?.id);
         const myRecord = myParticipant?.patientRecord;
-        // Pre-fill with user's OWN record if they already filled, otherwise empty
+        // Préremplir avec le dossier utilisateur si déjà rempli, sinon vide
         const base: Record<string, any> = myRecord ? { ...myRecord } : {};
-        // Auto-fill locked fields: patient name from meeting, profession from current user
+        // Auto remplissage champs verrouillés : nom patient depuis la réunion, profession depuis l'utilisateur
         base.firstName = meeting.patientFirstName || '';
         base.lastName = meeting.patientLastName || '';
         base.profession = user?.profession?.name || '';
@@ -188,7 +188,7 @@ const Meetings: React.FC = () => {
     const handleSaveForm = async () => {
         if (!selectedMeeting || !user?.id) return;
 
-        // Validate mandatory fields
+        // Vérifier champs obligatoires
         const missing = MANDATORY_FIELDS.filter(f => !editForm[f]?.toString().trim());
         if (missing.length > 0) {
             setSaveError(`Champs obligatoires manquants : ${missing.map(f => MANDATORY_LABELS[f] || f).join(', ')}`);

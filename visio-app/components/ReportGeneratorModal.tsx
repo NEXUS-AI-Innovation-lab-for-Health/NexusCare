@@ -27,7 +27,7 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
     const chunks = useRef<Blob[]>([]);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // ──────── Recording helpers ────────
+    // Enregistrement
 
     const startRecording = useCallback(async () => {
         try {
@@ -85,7 +85,7 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
         setRecordingTime(0);
     }, [audioUrl]);
 
-    // ──────── API calls ────────
+    // Appels API
 
     const transcribeOnly = useCallback(async () => {
         if (!audioBlob) return;

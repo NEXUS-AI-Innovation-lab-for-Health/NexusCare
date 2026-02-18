@@ -23,7 +23,7 @@ const ReportGenerator: React.FC = () => {
     const chunks = useRef<Blob[]>([]);
     const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-    // ──────── Recording helpers ────────
+    // Enregistrement
 
     const startRecording = useCallback(async () => {
         try {
@@ -34,7 +34,7 @@ const ReportGenerator: React.FC = () => {
 
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-            // Choose a supported mime type
+            // Type MIME supporté
             const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
                 ? 'audio/webm;codecs=opus'
                 : 'audio/webm';
@@ -51,15 +51,15 @@ const ReportGenerator: React.FC = () => {
                 setAudioBlob(blob);
                 setAudioUrl(URL.createObjectURL(blob));
                 setStep('recorded');
-                // Stop all tracks so the browser stops showing the mic indicator
+                // Arrête les pistes média pour supprimer l'indicateur micro
                 stream.getTracks().forEach((t) => t.stop());
             };
 
-            recorder.start(1000); // collect data every second
+            recorder.start(1000); // recupere les donnees chaque secondes
             mediaRecorder.current = recorder;
             setStep('recording');
 
-            // Timer
+            // Minuteur
             timerRef.current = setInterval(() => {
                 setRecordingTime((prev) => prev + 1);
             }, 1000);
@@ -85,7 +85,7 @@ const ReportGenerator: React.FC = () => {
         setRecordingTime(0);
     }, [audioUrl]);
 
-    // ──────── API calls ────────
+    // Appels API
 
     const transcribeOnly = useCallback(async () => {
         if (!audioBlob) return;
@@ -118,7 +118,7 @@ const ReportGenerator: React.FC = () => {
         setStep('generating');
         setErrorMsg('');
         try {
-            // Always use /generate/text – the transcription (possibly edited) is the source
+            // Utiliser /generate/text : la transcription (éventuellement éditée) est la source
             const textToSend = mode === 'text' ? manualText : transcription;
             if (!textToSend?.trim()) throw new Error('Aucun texte à envoyer');
 
@@ -146,14 +146,14 @@ const ReportGenerator: React.FC = () => {
         }
     }, [manualText, transcription, meetingType, mode]);
 
-    // ──────── Helpers ────────
+    // Utilitaires
 
     const fmtTime = (s: number) =>
         `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 
     const isProcessing = step === 'transcribing' || step === 'generating';
 
-    // ──────── Render ────────
+    // Rendu
 
     return (
         <div className="min-h-screen bg-slate-950 text-slate-100 p-8 font-sans">

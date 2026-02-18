@@ -214,7 +214,7 @@ const Chat: React.FC = () => {
             setNewGroupName('');
             setSelectedMemberIds([]);
             setMemberSearchQuery('');
-            // Auto-select the new group
+            // Sélection automatique du nouveau groupe
             selectGroupConversation(group);
         } catch (err) {
             console.error('Erreur création groupe:', err);

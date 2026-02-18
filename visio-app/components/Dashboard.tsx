@@ -86,11 +86,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onJoinMeeting }) => {
         setSelectedMeeting(meeting);
         setModalType('patient');
         setSaveError('');
-        // Find the current user's participant entry and their own patientRecord
+        // Recherche de l'entrée participant de l'utilisateur et de son dossier patient
         const myParticipant = meeting.participants.find(p => p.participant?.id === user?.id);
         const myRecord = myParticipant?.patientRecord;
-        // Pre-fill with user's OWN record if they already filled, otherwise empty
-        const base: Record<string, any> = myRecord ? { ...myRecord } : {};
+        // Préremplir avec le dossier utilisateur si déjà rempli, sinon vide
+        const base: Record<string, any> = myRecord ? { ...myRecord } : {}; 
         for (const f of MANDATORY_FIELDS) {
             if (!(f in base)) base[f] = '';
         }
@@ -120,7 +120,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onJoinMeeting }) => {
     const handleSaveForm = async () => {
         if (!selectedMeeting || !user?.id) return;
 
-        // Validate mandatory fields
+        // Vérifier champs obligatoires
         const missing = MANDATORY_FIELDS.filter(f => !editForm[f]?.toString().trim());
         if (missing.length > 0) {
             setSaveError(`Champs obligatoires manquants : ${missing.map(f => MANDATORY_LABELS[f] || f).join(', ')}`);

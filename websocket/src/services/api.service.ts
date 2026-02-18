@@ -43,7 +43,7 @@ class ApiService {
         }
     }
 
-    // --- MESSAGES ---
+    // Messages
 
     async saveMessage(content: string, senderId: string, roomId: string) {
         try {

@@ -13,10 +13,7 @@ const redis = new Redis(process.env.REDIS_URL || 'redis://redis:6379');
 const CACHE_TTL = 3600;
 const MAX_CACHED_MESSAGES = 50;
 
-/**
- * Dual-write: Redis List (hot cache) + PostgreSQL (cold storage) + Redis Stream (event bus).
- * All three run concurrently via Promise.all. Postgres is the source of truth.
- */
+/* Stockage : PostgreSQL (source) + cache Redis + stream d'événements écrit en parallèle. */
 export async function saveMessage(content: string, senderId: string, roomId: string) {
     const cacheKey = `chat:room:${roomId}:messages`;
     const now = new Date();
@@ -29,18 +26,18 @@ export async function saveMessage(content: string, senderId: string, roomId: str
     });
 
     const [pgResult] = await Promise.all([
-        // 1. Cold storage (PostgreSQL) — source of truth
+        // 1. PostgreSQL source de vérité
         prisma.message.create({
             data: { content, senderId, room: roomId },
         }),
 
-        // 2. Hot cache (Redis List) — last N messages for instant loading
+        // 2. Cache Redis derniers messages
         redis.rpush(cacheKey, messagePayload)
             .then(() => redis.ltrim(cacheKey, -MAX_CACHED_MESSAGES, -1))
             .then(() => redis.expire(cacheKey, CACHE_TTL))
             .catch(err => console.error('[Redis cache write failed]', err)),
 
-        // 3. Event bus (Redis Stream) — for async consumers (NestJS analytics, AI, etc.)
+        // 3. Stream Redis événement pour consommateurs asynchrones
         redis.xadd(
             'stream:chat:message_sent',
             '*',
@@ -54,13 +51,11 @@ export async function saveMessage(content: string, senderId: string, roomId: str
     return pgResult;
 }
 
-/**
- * Cache-aside fetch: try Redis List first, fall back to Postgres + backfill.
- */
+/* Lecture via cache puis Postgres, backfill si besoin. */
 export async function getMessagesForRoom(roomId: string) {
     const cacheKey = `chat:room:${roomId}:messages`;
 
-    // 1. Try Redis cache
+    // 1. Redis cache
     const cached = await redis.lrange(cacheKey, 0, -1);
     if (cached && cached.length > 0) {
         return cached.map(raw => {
