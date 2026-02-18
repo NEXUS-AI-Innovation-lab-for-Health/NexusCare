@@ -1,0 +1,172 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: oncocollab-postgres
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: oncocollab
+      POSTGRES_USER: admin
+      POSTGRES_PASSWORD: password123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U admin -d oncocollab"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: oncocollab-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rest-api:
+    build:
+      context: ./rest-api
+      dockerfile: Dockerfile.dev
+    container_name: oncocollab-rest-api-dev
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+      PORT: 3000
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/oncocollab
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oncocollab-network
+    volumes:
+      - ./rest-api/src:/app/src
+      - ./rest-api/prisma:/app/prisma
+      - ./rest-api/prisma.config.ts:/app/prisma.config.ts
+      - ./certs:/app/certs:ro
+
+  websocket:
+    build:
+      context: ./websocket
+      dockerfile: Dockerfile.dev
+    container_name: oncocollab-websocket-dev
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DATABASE_URL: postgresql://admin:password123@postgres:5432/oncocollab
+      REDIS_URL: redis://redis:6379
+      API_URL: ${API_URL:-http://rest-api:3000}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rest-api:
+        condition: service_started
+    networks:
+      - oncocollab-network
+    volumes:
+      - ./websocket/src:/app/src
+      - ./websocket/prisma:/app/prisma
+      - ./websocket/prisma.config.ts:/app/prisma.config.ts
+      - ./certs:/app/certs:ro
+
+  visio-app:
+    build:
+      context: ./visio-app
+      dockerfile: Dockerfile.dev
+    container_name: oncocollab-visio-app-dev
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=${API_URL}
+      - VITE_WS_URL=${WEBSOCKET_URL}
+      - VITE_REPORT_API_URL=${REPORT_API_URL:-}
+      - VITE_STUN_URL=${VITE_STUN_URL:-stun:stun.l.google.com:19302}
+      - VITE_TURN_URL=${VITE_TURN_URL:-turn:localhost:3478}
+      - VITE_TURN_USERNAME=${VITE_TURN_USERNAME:-admin}
+      - VITE_TURN_PASSWORD=${VITE_TURN_PASSWORD:-password}
+    depends_on:
+      - rest-api
+      - websocket
+      - generation_rapport
+    networks:
+      - oncocollab-network
+    volumes:
+      - ./visio-app/src:/app/src
+      - ./visio-app/components:/app/components
+      - ./visio-app/public:/app/public
+      - ./visio-app/types:/app/types
+      - ./visio-app/vite.config.ts:/app/vite.config.ts
+      - /app/node_modules
+
+  generation_rapport:
+    build:
+      context: ./generation_rapport
+      dockerfile: Dockerfile
+    container_name: oncocollab-generation-rapport-dev
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - ORGANIZATION_NAME=${ORGANIZATION_NAME:-OncoCollab}
+    volumes:
+      - ./generation_rapport:/app
+      - ./generation_rapport/output:/app/output
+      - ./certs:/app/certs:ro
+    networks:
+      - oncocollab-network
+
+  coturn:
+    image: coturn/coturn
+    container_name: oncocollab-coturn
+    restart: unless-stopped
+    ports:
+      - "3478:3478/tcp"
+      - "3478:3478/udp"
+      - "50000-50020:50000-50020/udp"
+    environment:
+      - EXTERNAL_IP=${EXTERNAL_IP:-127.0.0.1}
+    command:
+      - -n
+      - --log-file=stdout
+      - --min-port=50000
+      - --max-port=50020
+      - --listening-ip=0.0.0.0
+      - --external-ip=${EXTERNAL_IP:-127.0.0.1}
+      - --realm=oncocollab
+      - --user=admin:password
+      - --lt-cred-mech
+    networks:
+      - oncocollab-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+
+networks:
+  oncocollab-network:
+    driver: bridge

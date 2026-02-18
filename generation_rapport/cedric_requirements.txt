@@ -1,0 +1,18 @@
+# Meeting Report Generator - Requirements
+# Install with: pip install -r cedric_requirements.txt
+
+# PyTorch CPU-only (pinned for Whisper compatibility — avoids weights_only error)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch==2.4.1+cpu
+
+# Speech Recognition (OpenAI Whisper)
+openai-whisper>=20231117
+
+# Google Gemini AI
+google-generativeai>=0.3.0
+
+# PDF Generation
+reportlab>=4.0.0
+
+# Additional dependencies
+numpy>=1.24.0,<2.0.0

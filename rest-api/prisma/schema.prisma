@@ -1,0 +1,134 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Profession {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  color       String   @default("#6366f1")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users               User[]
+  meetingParticipants MeetingParticipant[]
+
+  @@map("professions")
+}
+
+model User {
+  id           String     @id @default(uuid())
+  email        String     @unique
+  firstName    String
+  lastName     String
+  professionId String
+  profession   Profession @relation(fields: [professionId], references: [id])
+  isAdmin      Boolean    @default(false)
+  password     String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  messages            Message[]
+  meetingParticipants MeetingParticipant[]
+  adminMeetings       Meeting[]            @relation("MeetingAdmin")
+  createdGroups       Group[]              @relation("GroupCreator")
+  groupMemberships    GroupMember[]
+
+  @@map("users")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  content   String
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  room      String
+  createdAt DateTime @default(now())
+
+  @@index([room, createdAt])
+  @@map("messages")
+}
+
+model PatientRecord {
+  id         String   @id @default(uuid())
+  profession String
+  data       Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  meetingParticipants MeetingParticipant[]
+
+  @@map("patient_records")
+}
+
+model Meeting {
+  id               String    @id @default(uuid())
+  roomId           String    @unique
+  subject          String
+  description      String?
+  time             String
+  patientFirstName String?
+  patientLastName  String?
+  roomAdminId      String
+  roomAdmin     User          @relation("MeetingAdmin", fields: [roomAdminId], references: [id])
+  status        String        @default("pending")
+  scheduledDate DateTime
+  startedAt     DateTime?
+  duration      Int
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  participants MeetingParticipant[]
+
+  @@map("meetings")
+}
+
+model MeetingParticipant {
+  id              String         @id @default(uuid())
+  meetingId       String
+  meeting         Meeting        @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  professionId    String
+  profession      Profession     @relation(fields: [professionId], references: [id])
+  isVisible       Boolean        @default(true)
+  showProfession  Boolean        @default(true)
+  formFilled      Boolean        @default(false)
+  patientRecordId String?
+  patientRecord   PatientRecord? @relation(fields: [patientRecordId], references: [id])
+  filledAt        DateTime?
+  joinedAt        DateTime?
+  leftAt          DateTime?
+
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
+}
+
+model Group {
+  id          String        @id @default(uuid())
+  name        String
+  createdById String
+  createdBy   User          @relation("GroupCreator", fields: [createdById], references: [id])
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  members     GroupMember[]
+
+  @@map("groups")
+}
+
+model GroupMember {
+  id       String   @id @default(uuid())
+  groupId  String
+  group    Group    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  userId   String
+  user     User     @relation(fields: [userId], references: [id])
+  joinedAt DateTime @default(now())
+
+  @@unique([groupId, userId])
+  @@map("group_members")
+}

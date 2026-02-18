@@ -1,0 +1,274 @@
+# docker-compose.prod.yml
+# Production deployment with Traefik reverse proxy and Let's Encrypt TLS
+#
+# Usage:
+#   cp .env.prod.example .env.prod    # Then edit with real values
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod build
+#   docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+services:
+
+  # ─────────────────────────────────────────────
+  # TRAEFIK - Reverse Proxy + TLS Termination
+  # ─────────────────────────────────────────────
+  traefik:
+    image: traefik:latest
+    container_name: oncocollab-traefik
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedByDefault=false
+      - --providers.docker.network=oncocollab-network
+
+      # Entrypoints
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+
+      # HTTP -> HTTPS redirect
+      - --entrypoints.web.http.redirections.entryPoint.to=websecure
+      - --entrypoints.web.http.redirections.entryPoint.scheme=https
+      - --entrypoints.web.http.redirections.entrypoint.permanent=true
+
+      # Let's Encrypt ACME (HTTP-01 challenge)
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge=true
+      - --certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web
+      - --certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL}
+      - --certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json
+
+      # Dashboard (accessible via traefik-PROJECT.DOMAIN, protected by BasicAuth)
+      - --api.dashboard=true
+      - --api.insecure=false
+
+      # Cloudflare trusted IPs - pour récupérer les vraies IPs clients derrière Cloudflare
+      - "--entrypoints.websecure.forwardedHeaders.trustedIPs=173.245.48.0/20,103.21.244.0/22,103.22.200.0/22,103.31.4.0/22,141.101.64.0/18,108.162.192.0/18,190.93.240.0/20,188.114.96.0/20,197.234.240.0/22,198.41.128.0/17,162.158.0.0/15,104.16.0.0/13,104.24.0.0/14,172.64.0.0/13,131.0.72.0/22"
+
+      # Logging
+      - --log.level=INFO
+      - --accesslog=true
+    environment:
+      - DOCKER_API_VERSION=1.47
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt_data:/letsencrypt
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      # Dashboard router
+      - traefik.http.routers.traefik-dashboard.rule=Host(`traefik-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.traefik-dashboard.entrypoints=websecure
+      - traefik.http.routers.traefik-dashboard.tls.certresolver=letsencrypt
+      - traefik.http.routers.traefik-dashboard.service=api@internal
+      - traefik.http.routers.traefik-dashboard.middlewares=traefik-auth
+      # BasicAuth for dashboard - generate with: echo $(htpasswd -nB admin) | sed -e s/\\$/\\$\\$/g
+      - traefik.http.middlewares.traefik-auth.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}
+
+  # ─────────────────────────────────────────────
+  # DATABASE (internal only, no public ports)
+  # ─────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: oncocollab-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: oncocollab-redis
+    restart: unless-stopped
+    command: redis-server --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - redis_data:/data
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ─────────────────────────────────────────────
+  # REST API - NestJS (api.DOMAIN)
+  # ─────────────────────────────────────────────
+  rest-api:
+    build:
+      context: ./rest-api
+      dockerfile: Dockerfile
+    container_name: oncocollab-rest-api
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["npm", "run", "start:prod"]
+    volumes:
+      - ./rest-api/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.rest-api.rule=Host(`api-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.rest-api.entrypoints=websecure
+      - traefik.http.routers.rest-api.tls.certresolver=letsencrypt
+      - traefik.http.services.rest-api.loadbalancer.server.port=3000
+
+  # ─────────────────────────────────────────────
+  # WEBSOCKET - Socket.IO (ws.DOMAIN)
+  # ─────────────────────────────────────────────
+  websocket:
+    build:
+      context: ./websocket
+      dockerfile: Dockerfile
+    container_name: oncocollab-websocket
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      API_URL: http://rest-api:3000
+    entrypoint: ["/docker-entrypoint.sh"]
+    command: ["npm", "start"]
+    volumes:
+      - ./websocket/docker-entrypoint.sh:/docker-entrypoint.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rest-api:
+        condition: service_started
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.websocket.rule=Host(`ws-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.websocket.entrypoints=websecure
+      - traefik.http.routers.websocket.tls.certresolver=letsencrypt
+      - traefik.http.services.websocket.loadbalancer.server.port=4000
+      # Forward X-Forwarded-Proto so Socket.IO knows it's behind HTTPS
+      - traefik.http.routers.websocket.middlewares=ws-headers
+      - traefik.http.middlewares.ws-headers.headers.customrequestheaders.X-Forwarded-Proto=https
+
+  # ─────────────────────────────────────────────
+  # VISIO APP - React SPA (app.DOMAIN)
+  # ─────────────────────────────────────────────
+  visio-app:
+    build:
+      context: ./visio-app
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: https://api-${PROJECT}.${DOMAIN}
+        VITE_WS_URL: https://ws-${PROJECT}.${DOMAIN}
+        VITE_REPORT_API_URL: https://reports-${PROJECT}.${DOMAIN}
+        # Serveur TURN externe metered.ca (VITE_METERED_API_KEY suffit, les URLs sont récupérées dynamiquement)
+        VITE_METERED_API_KEY: ${VITE_METERED_API_KEY}
+        # Fallback local si pas de clé metered (non utilisé en prod)
+        # VITE_STUN_URL: ${VITE_STUN_URL:-stun:stun.l.google.com:19302}
+        # VITE_TURN_URL: ${VITE_TURN_URL}
+        # VITE_TURN_USERNAME: ${VITE_TURN_USERNAME}
+        # VITE_TURN_PASSWORD: ${VITE_TURN_PASSWORD}
+    container_name: oncocollab-visio-app
+    restart: unless-stopped
+    depends_on:
+      - rest-api
+      - websocket
+      - generation_rapport
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.visio-app.rule=Host(`${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.visio-app.entrypoints=websecure
+      - traefik.http.routers.visio-app.tls.certresolver=letsencrypt
+      - traefik.http.services.visio-app.loadbalancer.server.port=80
+      # BasicAuth pour protéger l'accès à l'application en prod
+      # Générer avec : echo $(htpasswd -nB admin) | sed -e s/\\$/\\$\\$/g
+      - "traefik.http.middlewares.auth-demo.basicauth.users=${TRAEFIK_DASHBOARD_AUTH}"
+      - "traefik.http.routers.visio-app.middlewares=auth-demo"
+
+  # ─────────────────────────────────────────────
+  # GENERATION RAPPORT - FastAPI (reports.DOMAIN)
+  # ─────────────────────────────────────────────
+  generation_rapport:
+    build:
+      context: ./generation_rapport
+      dockerfile: Dockerfile
+    container_name: oncocollab-generation-rapport
+    restart: unless-stopped
+    environment:
+      GEMINI_API_KEY: ${GEMINI_API_KEY}
+      ORGANIZATION_NAME: ${ORGANIZATION_NAME:-OncoCollab}
+    volumes:
+      - generation_rapport_output:/app/output
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.generation-rapport.rule=Host(`reports-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.generation-rapport.entrypoints=websecure
+      - traefik.http.routers.generation-rapport.tls.certresolver=letsencrypt
+      - traefik.http.services.generation-rapport.loadbalancer.server.port=8000
+
+  # ─────────────────────────────────────────────
+  # COTURN - STUN/TURN (désactivé : on utilise metered.ca en prod)
+  # ─────────────────────────────────────────────
+  # coturn:
+  #   image: coturn/coturn
+  #   container_name: oncocollab-coturn
+  #   restart: unless-stopped
+  #   ports:
+  #     - "3478:3478/tcp"
+  #     - "3478:3478/udp"
+  #     - "50000-50020:50000-50020/udp"
+  #   environment:
+  #     EXTERNAL_IP: ${EXTERNAL_IP}
+  #   command:
+  #     - -n
+  #     - --log-file=stdout
+  #     - --min-port=50000
+  #     - --max-port=50020
+  #     - --listening-ip=0.0.0.0
+  #     - --external-ip=${EXTERNAL_IP}
+  #     - --realm=cedlab.ovh
+  #     - --user=${VITE_TURN_USERNAME}:${VITE_TURN_PASSWORD}
+  #     - --lt-cred-mech
+  #   networks:
+  #     - oncocollab-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  letsencrypt_data:
+    driver: local
+  generation_rapport_output:
+    driver: local
+
+networks:
+  oncocollab-network:
+    driver: bridge
+    name: oncocollab-network

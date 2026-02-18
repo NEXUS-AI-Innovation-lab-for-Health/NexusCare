@@ -1,0 +1,10 @@
+.netlify
+.env
+/certs
+/server/node_modules
+rest-api/package-lock.json
+/generation_rapport/__pycache__
+/generation_rapport/output
+/generation_rapport/input
+rest-api/package-lock.json
+.env.prod
