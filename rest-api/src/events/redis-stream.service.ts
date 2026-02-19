@@ -82,6 +82,6 @@ export class RedisStreamService implements OnModuleInit, OnModuleDestroy {
 
     private async handleMessageSent(data: Record<string, string>) {
         this.logger.debug(`[Redis Stream] Message sent event: ${JSON.stringify(data)}`);
-        // Future: trigger AI analysis, notifications, audit logging, etc.
+        // À l'avenir : analyses AI, notifications, audit
     }
 }

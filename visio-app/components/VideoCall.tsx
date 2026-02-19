@@ -14,7 +14,7 @@ const MANDATORY_LABELS: Record<string, string> = {
 
 const SERVER_URL = import.meta.env.VITE_WS_URL || "http://localhost:4000";
 
-// ICE servers par défaut (coturn local ou env vars)
+// ICE servers par défaut
 const DEFAULT_ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: import.meta.env.VITE_STUN_URL || 'stun:stun.l.google.com:19302' },
@@ -26,8 +26,8 @@ const DEFAULT_ICE_SERVERS: RTCConfiguration = {
   ],
 };
 
-// Si une clé API metered.ca est fournie, les ICE servers sont récupérés dynamiquement
-// (VITE_METERED_API_KEY doit être défini dans les build args)
+// ICE servers dynamiques si clé metered.ca
+// (clé requise en build)
 const METERED_API_KEY = import.meta.env.VITE_METERED_API_KEY;
 
 async function fetchIceServers(): Promise<RTCConfiguration> {
@@ -368,11 +368,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
 
     socketRef.current = socket;
 
-    // Helper to initiate a WebRTC connection with a remote user
     const initiateConnection = async (userId: string) => {
       const stream = localStreamRef.current || await streamPromise;
       if (!stream || !mounted) return;
-      // Don't create a duplicate peer connection
+      // Eviter les connexions p2p dupliquer
       if (peersRef.current.has(userId)) return;
       const pc = createPeerConnection(userId, stream);
       const offer = await pc.createOffer();
@@ -410,7 +409,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
       }
     });
 
-    // When we join a room, the server tells us who is already there
     socket.on('get-existing-users', async (existingUsers: string[]) => {
       if (!mounted) return;
       console.log(`[ROOM] Existing users in room:`, existingUsers);
@@ -422,7 +420,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
     socket.on('user-joined', async (userId) => {
       if (!mounted) return;
       console.log(`[ROOM] User joined: ${userId} — waiting for their offer`);
-      // Re-announce our name so the new participant knows who we are
+      // Réannonce le nom au nouveau participant
       socket.emit('announce-name', currentUserName, roomId);
     });
 
@@ -440,7 +438,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
       console.log(`Offer from: ${fromId}`);
       const stream = localStreamRef.current || await streamPromise;
       if (stream) {
-        // If there's already a peer connection for this user, close it first
+        // Si une connexion existe déjà pour cet utilisateur, fermer d'abord
         if (peersRef.current.has(fromId)) {
           peersRef.current.get(fromId)?.close();
           peersRef.current.delete(fromId);
@@ -712,7 +710,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
         </div>
       )}
 
-      {/* Overlay plein écran — en dehors du parent backdrop-blur pour éviter la contrainte CSS */}
+      {/* Overlay plein écran hors parent backdrop blur pour éviter la contrainte CSS */}
       {isFullScreen && (
         <div className="fixed inset-0 z-50 bg-slate-950 p-4">
           <button

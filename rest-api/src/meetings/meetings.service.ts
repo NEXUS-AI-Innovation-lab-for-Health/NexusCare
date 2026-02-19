@@ -109,9 +109,9 @@ export class MeetingsService {
             throw new ForbiddenException('Only the room admin can update this meeting');
         }
 
-        // Build scalar update data (exclude participants)
+        // Construire données mise à jour (exclut participants)
         const { participants: dtoParticipants, ...scalarFields } = updateMeetingDto;
-        const updateData: any = {};
+        const updateData: any = {}; 
         if (scalarFields.subject) updateData.subject = scalarFields.subject;
         if (scalarFields.description !== undefined) updateData.description = scalarFields.description;
         if (scalarFields.time) updateData.time = scalarFields.time;
@@ -123,7 +123,7 @@ export class MeetingsService {
         if (scalarFields.startedAt) updateData.startedAt = new Date(scalarFields.startedAt);
         if (scalarFields.duration) updateData.duration = scalarFields.duration;
 
-        // If patient name changed, propagate to all linked patient records
+        // Si nom patient modifié, propager aux dossiers liés
         if (scalarFields.patientFirstName !== undefined || scalarFields.patientLastName !== undefined) {
             const participantsWithRecords = meeting.participants.filter(p => p.patientRecordId);
             for (const p of participantsWithRecords) {
@@ -141,7 +141,7 @@ export class MeetingsService {
         }
 
         if (dtoParticipants) {
-            // Replace participants: delete existing, create new
+            // Remplacer participants : supprimer puis recréer
             await this.prisma.meetingParticipant.deleteMany({ where: { meetingId: id } });
             updateData.participants = {
                 create: dtoParticipants.map(p => {

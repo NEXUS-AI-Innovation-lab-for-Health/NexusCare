@@ -13,7 +13,7 @@ export default function Profile() {
 
   const [user, setUser] = useState<any>(null);
 
-  // Section 1 state
+  // Section 1 état
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
@@ -21,7 +21,7 @@ export default function Profile() {
   const [infoError, setInfoError] = useState('');
   const [infoLoading, setInfoLoading] = useState(false);
 
-  // Section 2 state
+  // Section 2 état
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -149,7 +149,7 @@ export default function Profile() {
       <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
         {/* User summary card */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 flex items-center gap-5">
-          <div className="flex-shrink-0 w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center text-2xl font-bold text-white select-none">
+          <div className="shrink-0 w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center text-2xl font-bold text-white select-none">
             {getInitials()}
           </div>
           <div>
@@ -162,7 +162,7 @@ export default function Profile() {
           </div>
         </div>
 
-        {/* Section 1 - Informations personnelles */}
+        {/* Section 1 : Informations personnelles */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-800">
             <div className="w-1 h-5 bg-teal-500 rounded-full" />
@@ -234,7 +234,7 @@ export default function Profile() {
           </form>
         </div>
 
-        {/* Section 2 - Changer le mot de passe */}
+        {/* Section 2 : Changer le mot de passe */}
         <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
           <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-800">
             <div className="w-1 h-5 bg-teal-500 rounded-full" />
