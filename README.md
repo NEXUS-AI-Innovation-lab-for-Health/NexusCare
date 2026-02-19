@@ -64,6 +64,7 @@ OncoCollab/
 - Node.js ≥ 20 et npm ≥ 10 (pour développement local hors Docker)
 - `mkcert` — HTTPS local (optionnel mais recommandé pour le dev)
 - `ngrok` — exposition locale (optionnel)
+- Pas connecter à eduroam
 
 ---
 
