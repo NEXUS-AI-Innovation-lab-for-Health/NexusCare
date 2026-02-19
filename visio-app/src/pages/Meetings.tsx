@@ -299,7 +299,7 @@ const Meetings: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 p-8 font-sans">
+        <div className="min-h-screen bg-slate-950 text-slate-100 px-4 py-6 md:p-8 font-sans">
             {isModalOpen && selectedMeeting && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
                     <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
