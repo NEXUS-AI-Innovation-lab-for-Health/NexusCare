@@ -48,6 +48,9 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://admin:password123@postgres:5432/oncocollab
       REDIS_URL: redis://redis:6379
+      FORMS_API_URL: http://host.docker.internal:9091
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
