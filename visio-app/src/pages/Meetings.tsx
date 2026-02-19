@@ -165,20 +165,7 @@ const Meetings: React.FC = () => {
                 .map(p => (p.user && typeof p.user === 'object' ? p.user.id : p.user))
                 .filter((id): id is string => Boolean(id));
 
-            const selectedIds = new Set<string>(editParticipants);
-            if (adminId) {
-                selectedIds.add(adminId);
-            }
-
-            const participantsPayload = Array.from(selectedIds).map(id => {
-                const isExisting = currentParticipantIds.includes(id);
-                const u = allUsers.find(u => u.id === id) || (adminId === id ? user : undefined);
-                return {
-                    user: id,
-                    ...(isExisting ? {} : { profession: u?.profession?.id || u?.profession }),
-                };
-            });
-
+            // 1. Mettre à jour les champs scalaires
             await api.updateMeeting(selectedMeeting.id, {
                 subject: detailsForm.subject.trim(),
                 description: detailsForm.description.trim(),
@@ -186,8 +173,23 @@ const Meetings: React.FC = () => {
                 duration: detailsForm.duration,
                 patientFirstName: detailsForm.patientFirstName.trim(),
                 patientLastName: detailsForm.patientLastName.trim(),
-                participants: participantsPayload,
             }, user.id);
+
+            // 2. Diff participants : ajouter les nouveaux, retirer les supprimés
+            const toAdd = editParticipants.filter((id: string) => !currentParticipantIds.includes(id));
+            const toRemove = currentParticipantIds.filter(
+                (id: string) => id !== adminId && !editParticipants.includes(id)
+            );
+
+            await Promise.all([
+                ...toAdd.map((id: string) => {
+                    const u = allUsers.find((u: any) => u.id === id);
+                    const professionId = u?.profession?.id || u?.profession || '';
+                    return api.addParticipantToMeeting(selectedMeeting.id, id, professionId);
+                }),
+                ...toRemove.map((id: string) => api.removeParticipantFromMeeting(selectedMeeting.id, id)),
+            ]);
+
             const updatedMeetings = await api.getMeetingsByParticipant(user.id);
             setMeetings(updatedMeetings);
             setIsModalOpen(false);

@@ -226,9 +226,11 @@ export const api = {
         return response.json();
     },
 
-    addParticipantToMeeting: async (meetingId: string, participantId: string) => {
-        const response = await fetch(`${API_URL}/meetings/${meetingId}/participants/${participantId}`, {
+    addParticipantToMeeting: async (meetingId: string, participantId: string, professionId: string) => {
+        const response = await fetch(`${API_URL}/meetings/${meetingId}/participants`, {
             method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ participantId, professionId }),
         });
         if (!response.ok) throw new Error("Failed to add participant");
         return response.json();
