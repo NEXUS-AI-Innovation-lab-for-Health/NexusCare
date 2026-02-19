@@ -74,6 +74,7 @@ const Meetings: React.FC = () => {
     });
     const [detailsSaving, setDetailsSaving] = React.useState(false);
     const [detailsError, setDetailsError] = React.useState('');
+    const [editParticipants, setEditParticipants] = React.useState<string[]>([]);
 
     React.useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -139,6 +140,11 @@ const Meetings: React.FC = () => {
             patientFirstName: meeting.patientFirstName || '',
             patientLastName: meeting.patientLastName || '',
         });
+        const adminId = meeting.roomAdmin?.id || meeting.roomAdmin;
+        const initialParticipants = (meeting.participants || [])
+            .map(p => (p.user && typeof p.user === 'object' ? p.user.id : p.user))
+            .filter((id): id is string => Boolean(id) && id !== adminId);
+        setEditParticipants(initialParticipants);
         setDetailsError('');
         setIsModalOpen(true);
     };
@@ -154,6 +160,25 @@ const Meetings: React.FC = () => {
         setDetailsSaving(true);
         setDetailsError('');
         try {
+            const adminId = selectedMeeting.roomAdmin?.id || selectedMeeting.roomAdmin;
+            const currentParticipantIds = (selectedMeeting.participants || [])
+                .map(p => (p.user && typeof p.user === 'object' ? p.user.id : p.user))
+                .filter((id): id is string => Boolean(id));
+
+            const selectedIds = new Set<string>(editParticipants);
+            if (adminId) {
+                selectedIds.add(adminId);
+            }
+
+            const participantsPayload = Array.from(selectedIds).map(id => {
+                const isExisting = currentParticipantIds.includes(id);
+                const u = allUsers.find(u => u.id === id) || (adminId === id ? user : undefined);
+                return {
+                    user: id,
+                    ...(isExisting ? {} : { profession: u?.profession?.id || u?.profession }),
+                };
+            });
+
             await api.updateMeeting(selectedMeeting.id, {
                 subject: detailsForm.subject.trim(),
                 description: detailsForm.description.trim(),
@@ -161,6 +186,7 @@ const Meetings: React.FC = () => {
                 duration: detailsForm.duration,
                 patientFirstName: detailsForm.patientFirstName.trim(),
                 patientLastName: detailsForm.patientLastName.trim(),
+                participants: participantsPayload,
             }, user.id);
             const updatedMeetings = await api.getMeetingsByParticipant(user.id);
             setMeetings(updatedMeetings);
@@ -368,6 +394,43 @@ const Meetings: React.FC = () => {
                                                         onChange={(e) => setDetailsForm({ ...detailsForm, duration: parseInt(e.target.value) || 0 })}
                                                         className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
                                                     />
+                                                </div>
+                                            </div>
+                                            <div className="border-t border-slate-700 pt-4 mt-4">
+                                                <h3 className="text-sm font-semibold text-teal-400 mb-3 flex items-center gap-2">
+                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                                    </svg>
+                                                    Participants
+                                                </h3>
+                                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                    {allUsers
+                                                        .filter(u => u.id !== (selectedMeeting.roomAdmin?.id || selectedMeeting.roomAdmin))
+                                                        .map(u => (
+                                                            <label key={u.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={editParticipants.includes(u.id)}
+                                                                    onChange={(e) => {
+                                                                        if (e.target.checked) {
+                                                                            setEditParticipants(prev => prev.includes(u.id) ? prev : [...prev, u.id]);
+                                                                        } else {
+                                                                            setEditParticipants(prev => prev.filter(id => id !== u.id));
+                                                                        }
+                                                                    }}
+                                                                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500"
+                                                                />
+                                                                <span className="text-white text-sm">
+                                                                    {u.firstName} {u.lastName}
+                                                                </span>
+                                                                {u.profession?.name && (
+                                                                    <span className="text-xs text-slate-400">({u.profession.name})</span>
+                                                                )}
+                                                            </label>
+                                                        ))}
+                                                    {allUsers.filter(u => u.id !== (selectedMeeting.roomAdmin?.id || selectedMeeting.roomAdmin)).length === 0 && (
+                                                        <p className="text-slate-500 text-sm">Aucun autre utilisateur disponible</p>
+                                                    )}
                                                 </div>
                                             </div>
                                             {detailsError && (
