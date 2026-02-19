@@ -11,6 +11,7 @@ export function serializeProfession(p: any) {
     description: p.description,
     color: p.color,
     isActive: p.isActive,
+    idForm: p.idForm ?? null,
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
   };
