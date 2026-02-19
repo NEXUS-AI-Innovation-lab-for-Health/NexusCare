@@ -45,6 +45,7 @@ const Chat: React.FC = () => {
     const [loading, setLoading] = useState<boolean>(false);
     const [searchQuery, setSearchQuery] = useState<string>('');
     const [sidebarTab, setSidebarTab] = useState<'contacts' | 'groups'>('contacts');
+    const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
     const socketRef = useRef<Socket | null>(null);
     const messagesEndRef = useRef<HTMLDivElement | null>(null);
     const usersRef = useRef<User[]>([]);
@@ -172,6 +173,10 @@ const Chat: React.FC = () => {
         setSelectedUser(targetUser);
         setSelectedGroup(null);
         setConversationType('dm');
+        // Sur mobile, on referme le menu une fois la conversation choisie
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
         await joinRoom(getDmRoomId(user.id, targetUser.id));
     }, [user, joinRoom]);
 
@@ -179,6 +184,9 @@ const Chat: React.FC = () => {
         setSelectedGroup(group);
         setSelectedUser(null);
         setConversationType('group');
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
         await joinRoom(`group_${group.id}`);
     }, [joinRoom]);
 
@@ -285,9 +293,11 @@ const Chat: React.FC = () => {
     };
 
     return (
-        <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden">
+        <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden relative">
             {/* Left Sidebar */}
-            <div className="w-80 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col">
+            <div
+                className={`fixed inset-y-0 left-0 z-30 w-72 sm:static sm:w-80 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-200 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
+            >
                 {/* Sidebar Header */}
                 <div className="p-4 border-b border-slate-800 flex items-center gap-3">
                     <Link
@@ -415,8 +425,32 @@ const Chat: React.FC = () => {
                 </div>
             </div>
 
+            {/* Overlay mobile pour fermer la sidebar */}
+            {isSidebarOpen && (
+                <div
+                    className="fixed inset-0 z-20 bg-black/40 sm:hidden"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Main Area */}
             <div className="flex-1 flex flex-col min-w-0">
+                {/* Bouton d'ouverture du menu sur mobile */}
+                <div className="sm:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+                    <button
+                        onClick={() => setIsSidebarOpen(true)}
+                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center gap-2"
+                    >
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                        </svg>
+                        <span className="text-sm font-medium">Conversations</span>
+                    </button>
+                    {hasConversation && (
+                        <span className="text-xs text-slate-400">Balayez vers la gauche pour voir la discussion</span>
+                    )}
+                </div>
+
                 {!hasConversation ? (
                     <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
                         <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mb-4">

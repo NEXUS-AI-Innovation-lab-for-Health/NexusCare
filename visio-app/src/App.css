@@ -1,0 +1,7 @@
+/* Ajustements globaux léger pour le responsive mobile */
+
+.wrap-break-words {
+	word-wrap: break-word;
+	overflow-wrap: anywhere;
+}
+
