@@ -17,20 +17,20 @@ export class SeedService implements OnModuleInit {
 
     private async seedProfessions() {
         const professions = [
-            { name: 'Oncologue', description: 'Spécialiste en oncologie', color: '#ef4444' },
-            { name: 'Chirurgien', description: 'Chirurgien spécialisé', color: '#3b82f6' },
-            { name: 'Radiologue', description: 'Spécialiste en imagerie médicale', color: '#8b5cf6' },
-            { name: 'Anatomopathologiste', description: 'Spécialiste en anatomie pathologique', color: '#10b981' },
-            { name: 'Radiothérapeute', description: 'Spécialiste en radiothérapie', color: '#f59e0b' },
-            { name: 'Infirmier(ère)', description: 'Personnel infirmier', color: '#ec4899' },
-            { name: 'Psychologue', description: 'Accompagnement psychologique', color: '#6366f1' },
-            { name: 'Médecin généraliste', description: 'Médecin traitant', color: '#14b8a6' },
+            { name: 'Oncologue', description: 'Spécialiste en oncologie', color: '#ef4444', idForm: 'oncologistForm' },
+            { name: 'Chirurgien', description: 'Chirurgien spécialisé', color: '#3b82f6', idForm: 'surgeonForm' },
+            { name: 'Radiologue', description: 'Spécialiste en imagerie médicale', color: '#8b5cf6', idForm: 'radiologistForm' },
+            { name: 'Anatomopathologiste', description: 'Spécialiste en anatomie pathologique', color: '#10b981', idForm: 'pathologistForm' },
+            { name: 'Radiothérapeute', description: 'Spécialiste en radiothérapie', color: '#f59e0b', idForm: 'radiotherapistForm' },
+            { name: 'Infirmier(ère)', description: 'Personnel infirmier', color: '#ec4899', idForm: 'nurseForm' },
+            { name: 'Psychologue', description: 'Accompagnement psychologique', color: '#6366f1', idForm: 'psychologistForm' },
+            { name: 'Médecin généraliste', description: 'Médecin traitant', color: '#14b8a6', idForm: 'general_practitionerForm' },
         ];
 
         for (const profession of professions) {
             await this.prisma.profession.upsert({
                 where: { name: profession.name },
-                update: {},
+                update: { idForm: profession.idForm },
                 create: profession,
             });
         }
@@ -157,7 +157,7 @@ export class SeedService implements OnModuleInit {
         const nextWeek = new Date();
         nextWeek.setDate(nextWeek.getDate() + 7);
 
-        // Meeting 1
+        // RCP pour discuter du plan de traitement de Michel Dubois
         await this.prisma.meeting.create({
             data: {
                 roomId: 'demo-room-001',
@@ -181,7 +181,7 @@ export class SeedService implements OnModuleInit {
         });
         console.log('  ➕ Réunion créée: RCP - Cas Michel Dubois');
 
-        // Meeting 2
+        // Suivi post-op de Mme Lambert pour planifier la suite du traitement
         await this.prisma.meeting.create({
             data: {
                 roomId: 'demo-room-002',

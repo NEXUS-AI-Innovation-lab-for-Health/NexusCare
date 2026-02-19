@@ -16,4 +16,8 @@ export class CreateProfessionDto {
     @IsBoolean()
     @IsOptional()
     isActive?: boolean;
+
+    @IsString()
+    @IsOptional()
+    idForm?: string;
 }
