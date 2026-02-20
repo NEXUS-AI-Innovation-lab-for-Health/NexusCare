@@ -150,9 +150,14 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState<string>(initialVideoDeviceId || '');
   const [selectedAudioDevice, setSelectedAudioDevice] = useState<string>(initialAudioDeviceId || '');
-  const [showDeviceMenu, setShowDeviceMenu] = useState<'video' | 'audio' | null>(null);
+  const [showDeviceMenu, setShowDeviceMenu] = useState<'video' | 'audio' | 'speaker' | null>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+
+  const [audioOutputDevices, setAudioOutputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [selectedAudioOutputDevice, setSelectedAudioOutputDevice] = useState<string>('');
+  const [volume, setVolume] = useState<number>(100);
+  const remoteMediaRefs = useRef<Map<string, HTMLVideoElement>>(new Map());
 
   const [isSpeakerOn, setIsSpeakerOn] = useState(true);
   const [chatMessages, setChatMessages] = useState<Array<{content: string, senderName: string, timestamp: string, isOwn: boolean}>>([]);
@@ -208,6 +213,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
         const devices = await navigator.mediaDevices.enumerateDevices();
         setVideoDevices(devices.filter(d => d.kind === 'videoinput'));
         setAudioDevices(devices.filter(d => d.kind === 'audioinput'));
+        setAudioOutputDevices(devices.filter(d => d.kind === 'audiooutput'));
       } catch (error) {
         console.error('Erreur énumération devices:', error);
       }
@@ -218,6 +224,24 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
+
+  // Apply volume to all remote media elements
+  useEffect(() => {
+    remoteMediaRefs.current.forEach((el) => {
+      el.volume = volume / 100;
+    });
+  }, [volume, remoteStreams]);
+
+  // Apply audio output device (sinkId) to all remote media elements
+  useEffect(() => {
+    if (selectedAudioOutputDevice) {
+      remoteMediaRefs.current.forEach((el) => {
+        if (typeof (el as any).setSinkId === 'function') {
+          (el as any).setSinkId(selectedAudioOutputDevice).catch(console.error);
+        }
+      });
+    }
+  }, [selectedAudioOutputDevice, remoteStreams]);
 
   const changeDevice = useCallback(async (type: 'video' | 'audio', deviceId: string) => {
     if (!localStreamRef.current) return;
@@ -296,6 +320,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   }, []);
 
   const removeRemoteStream = useCallback((id: string) => {
+    remoteMediaRefs.current.delete(id);
     setRemoteStreams(prev => {
       const newMap = new Map(prev);
       newMap.delete(id);
@@ -733,7 +758,18 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                   </div>
                 )}
                 <video
-                  ref={(el) => { if (el && item.stream) el.srcObject = item.stream; }}
+                  ref={(el) => {
+                    if (el && item.stream) {
+                      el.srcObject = item.stream;
+                      if (!item.isLocal) {
+                        remoteMediaRefs.current.set(item.id, el);
+                        el.volume = volume / 100;
+                        if (selectedAudioOutputDevice && typeof (el as any).setSinkId === 'function') {
+                          (el as any).setSinkId(selectedAudioOutputDevice).catch(console.error);
+                        }
+                      }
+                    }
+                  }}
                   autoPlay
                   muted={item.isLocal || !isSpeakerOn}
                   playsInline
@@ -781,7 +817,18 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                     </div>
                   )}
                   <video
-                    ref={(el) => { if (el && item.stream) el.srcObject = item.stream; }}
+                    ref={(el) => {
+                      if (el && item.stream) {
+                        el.srcObject = item.stream;
+                        if (!item.isLocal) {
+                          remoteMediaRefs.current.set(item.id, el);
+                          el.volume = volume / 100;
+                          if (selectedAudioOutputDevice && typeof (el as any).setSinkId === 'function') {
+                            (el as any).setSinkId(selectedAudioOutputDevice).catch(console.error);
+                          }
+                        }
+                      }
+                    }}
                     autoPlay
                     muted={item.isLocal || !isSpeakerOn}
                     playsInline
@@ -918,13 +965,72 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                 )}
               </div>
 
-              <button
-                onClick={() => setIsSpeakerOn(prev => !prev)}
-                className={`p-4 rounded-full transition-all flex items-center justify-center shadow-lg transform hover:scale-105 ${isSpeakerOn ? 'bg-teal-500 hover:bg-teal-600' : 'bg-red-500 hover:bg-red-600'}`}
-                title={isSpeakerOn ? 'Couper le son' : 'Activer le son'}
-              >
-                <SpeakerIcon isEnabled={isSpeakerOn} />
-              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setIsSpeakerOn(prev => !prev)}
+                  className={`p-4 rounded-full transition-all flex items-center justify-center shadow-lg transform hover:scale-105 ${isSpeakerOn ? 'bg-teal-500 hover:bg-teal-600' : 'bg-red-500 hover:bg-red-600'}`}
+                  title={isSpeakerOn ? 'Couper le son' : 'Activer le son'}
+                >
+                  <SpeakerIcon isEnabled={isSpeakerOn} />
+                </button>
+                <button
+                  onClick={() => setShowDeviceMenu(showDeviceMenu === 'speaker' ? null : 'speaker')}
+                  className="absolute -top-1 -right-1 w-6 h-6 bg-slate-700 hover:bg-slate-600 rounded-full flex items-center justify-center text-white text-xs shadow-lg"
+                  title="Paramètres audio de sortie"
+                >
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                  </svg>
+                </button>
+                {showDeviceMenu === 'speaker' && (
+                  <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 bg-slate-800 rounded-lg shadow-xl border border-slate-700 p-2 min-w-[280px] max-h-[60vh] flex flex-col z-50">
+                    <div className="text-xs text-slate-400 font-semibold mb-2 px-2 shrink-0">Sortie audio</div>
+                    <div className="overflow-y-auto flex-1 max-h-[200px]">
+                    {audioOutputDevices.map(device => (
+                      <button
+                        key={device.deviceId}
+                        onClick={() => {
+                          setSelectedAudioOutputDevice(device.deviceId);
+                          setShowDeviceMenu(null);
+                        }}
+                        className={`w-full text-left px-3 py-2 rounded text-sm hover:bg-slate-700 transition-colors ${
+                          selectedAudioOutputDevice === device.deviceId ? 'bg-teal-500/20 text-teal-300' : 'text-white'
+                        }`}
+                      >
+                        {device.label || `Sortie ${device.deviceId.slice(0, 5)}...`}
+                      </button>
+                    ))}
+                    {audioOutputDevices.length === 0 && (
+                      <div className="px-3 py-2 text-slate-500 text-sm">Aucun périphérique détecté</div>
+                    )}
+                    </div>
+                    <div className="border-t border-slate-700 mt-2 pt-3 px-2 shrink-0">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs text-slate-400 font-semibold">Volume</span>
+                        <span className="text-xs text-teal-300 font-mono">{volume}%</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                        </svg>
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={volume}
+                          onChange={(e) => setVolume(Number(e.target.value))}
+                          className="flex-1 h-1.5 bg-slate-600 rounded-full appearance-none cursor-pointer accent-teal-500"
+                        />
+                        <svg className="w-4 h-4 text-slate-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                          <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                          <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                        </svg>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
 
               <button
                 onClick={onLeave}
