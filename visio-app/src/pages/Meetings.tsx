@@ -252,8 +252,12 @@ const Meetings: React.FC = () => {
         }
     };
 
-    const handleJoinMeeting = (meetingId: string, _roomId: string) => {
-        navigate(`/meeting/${meetingId}/premeeting`);
+    const handleJoinMeeting = (meeting: Meeting) => {
+        if (!isCurrentUserFormFilled(meeting)) {
+            alert('Vous devez compléter les pré-requis avant de rejoindre la réunion.');
+            return;
+        }
+        navigate(`/meeting/${meeting.id}/premeeting`);
     };
 
     const handleCreateMeeting = async () => {
@@ -905,8 +909,13 @@ const Meetings: React.FC = () => {
                                         )}
 
                                         <button
-                                            onClick={() => handleJoinMeeting(meeting.id, meeting.roomId)}
-                                            className="px-6 py-2 bg-teal-600 hover:bg-teal-500 text-white font-medium rounded-lg shadow-lg shadow-teal-900/20 hover:shadow-teal-500/20 transition-all transform hover:-translate-y-0.5 active:translate-y-0"
+                                            onClick={() => handleJoinMeeting(meeting)}
+                                            disabled={!isCurrentUserFormFilled(meeting)}
+                                            className={`px-6 py-2 font-medium rounded-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 ${
+                                                isCurrentUserFormFilled(meeting)
+                                                    ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-900/20 hover:shadow-teal-500/20'
+                                                    : 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-60'
+                                            }`}
                                         >
                                             Rejoindre
                                         </button>
