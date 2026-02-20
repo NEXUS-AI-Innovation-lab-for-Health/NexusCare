@@ -282,4 +282,10 @@ export const api = {
         if (!response.ok) throw new Error("Failed to remove group member");
         return response.json();
     },
+
+    getFormById: async (id: string) => {
+        const response = await fetch(`${API_URL}/forms/${id}`);
+        if (!response.ok) return null;
+        return response.json();
+    },
 };

@@ -13,6 +13,7 @@ import { SeedModule } from './seed/seed.module';
 import { EventsModule } from './events/events.module';
 import { AiModule } from './ai/ai.module';
 import { GroupsModule } from './groups/groups.module';
+import { FormsModule } from './forms/forms.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { GroupsModule } from './groups/groups.module';
     EventsModule,
     AiModule,
     GroupsModule,
+    FormsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

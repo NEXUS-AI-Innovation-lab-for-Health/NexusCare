@@ -25,6 +25,24 @@ interface Meeting {
     duration: number;
 }
 
+interface FormFieldSchema {
+    field_required: boolean;
+    unique_id: string;
+    field_key: string;
+    // 'dicom' s'affiche comme un champ texte mais le type est conservé pour que le backend puisse le traiter comme du DICOM
+    field_type: 'datepicker' | 'text' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom';
+    field_mode: 'edit' | 'view';
+    field_label: string;
+    field_options?: string[];
+}
+
+interface FormSchema {
+    form_label: string;
+    models: string[];
+    last_updated: string;
+    form: FormFieldSchema[];
+}
+
 const MANDATORY_FIELDS = ['firstName', 'lastName', 'profession'];
 const METADATA_FIELDS = ['id', 'createdAt', 'updatedAt'];
 
@@ -43,11 +61,9 @@ const Meetings: React.FC = () => {
     const [isModalOpen, setIsModalOpen] = React.useState(false);
     const [modalType, setModalType] = React.useState<'patient' | 'details'>('patient');
     const [editForm, setEditForm] = React.useState<Record<string, any>>({});
-    const [newFieldName, setNewFieldName] = React.useState('');
-    const [newFieldValue, setNewFieldValue] = React.useState('');
+    const [formSchema, setFormSchema] = React.useState<FormSchema | null>(null);
     const [saveError, setSaveError] = React.useState('');
 
-    // Create meeting modal state
     const [isCreateModalOpen, setIsCreateModalOpen] = React.useState(false);
     const [createForm, setCreateForm] = React.useState({
         subject: '',
@@ -63,7 +79,6 @@ const Meetings: React.FC = () => {
     const [createError, setCreateError] = React.useState('');
     const [createLoading, setCreateLoading] = React.useState(false);
 
-    // Edit meeting details state (admin only)
     const [detailsForm, setDetailsForm] = React.useState({
         subject: '',
         description: '',
@@ -116,6 +131,8 @@ const Meetings: React.FC = () => {
         setSelectedMeeting(meeting);
         setModalType('patient');
         setSaveError('');
+        setFormSchema(null);
+
         // Recherche de l'entrée participant de l'utilisateur et de son dossier patient
         const myParticipant = meeting.participants.find(p => p.user?.id === user?.id);
         const myRecord = myParticipant?.patientRecord;
@@ -126,6 +143,18 @@ const Meetings: React.FC = () => {
         base.lastName = meeting.patientLastName || '';
         base.profession = user?.profession?.name || '';
         setEditForm(base);
+
+        // Fetch du schema de formulaire lié à la profession de l'utilisateur
+        const idForm = user?.profession?.idForm;
+        if (idForm) {
+            try {
+                const schema = await api.getFormById(idForm);
+                if (schema) setFormSchema(schema);
+            } catch {
+                // Pas de schema disponible, le formulaire s'affiche sans champs custom
+            }
+        }
+
         setIsModalOpen(true);
     };
 
@@ -200,17 +229,32 @@ const Meetings: React.FC = () => {
         }
     };
 
-    const handleAddField = () => {
-        if (newFieldName && newFieldValue) {
-            setEditForm({ ...editForm, [newFieldName]: newFieldValue });
-            setNewFieldName('');
-            setNewFieldValue('');
-        }
-    };
+    const renderFormField = (field: FormFieldSchema) => {
+        const value = editForm[field.field_key] ?? '';
+        const isReadOnly = field.field_mode === 'view';
+        const baseClass = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors';
+        const readOnlyClass = 'w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-400 cursor-not-allowed';
+        const onChange = (val: any) => setEditForm((prev: Record<string, any>) => ({ ...prev, [field.field_key]: val }));
 
-    const handleDeleteField = (fieldName: string) => {
-        const { [fieldName]: _, ...rest } = editForm as Record<string, any>;
-        setEditForm(rest);
+        switch (field.field_type) {
+            case 'datepicker':
+                return <input type="date" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
+            case 'number':
+                return <input type="number" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
+            case 'textarea':
+                return <textarea value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} rows={3} className={isReadOnly ? readOnlyClass : `${baseClass} resize-none`} />;
+            case 'checkbox':
+                return (
+                    <div className="flex items-center h-10">
+                        <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} disabled={isReadOnly} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500" />
+                    </div>
+                );
+            case 'dicom':
+                // Champ texte côté UI mais le type 'dicom' reste dans le payload pour le traitement backend
+                return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} placeholder="Identifiant DICOM" className={isReadOnly ? readOnlyClass : baseClass} />;
+            default: // text et select tombent ici
+                return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
+        }
     };
 
     const handleSaveForm = async () => {
@@ -224,7 +268,7 @@ const Meetings: React.FC = () => {
         }
         setSaveError('');
 
-        // Strip metadata before sending
+        // On retire les champs techniques avant d'envoyer
         const payload: Record<string, any> = {};
         for (const [k, v] of Object.entries(editForm)) {
             if (!METADATA_FIELDS.includes(k)) payload[k] = v;
@@ -484,7 +528,7 @@ const Meetings: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-                                    {/* Mandatory fields */}
+                                    {/* Champs fixes préremplis automatiquement */}
                                     <div className="space-y-3">
                                         <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Champs obligatoires</h3>
                                         {MANDATORY_FIELDS.map((key) => (
@@ -503,78 +547,28 @@ const Meetings: React.FC = () => {
                                         ))}
                                     </div>
 
-                                    {/* Custom fields */}
-                                    {Object.entries(editForm)
-                                        .filter(([key]) => !MANDATORY_FIELDS.includes(key) && !METADATA_FIELDS.includes(key))
-                                        .length > 0 && (
-                                        <div className="border-t border-slate-700 pt-4 space-y-3">
-                                            <h3 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Champs personnalisés</h3>
-                                            {Object.entries(editForm)
-                                                .filter(([key]) => !MANDATORY_FIELDS.includes(key) && !METADATA_FIELDS.includes(key))
-                                                .map(([key, value]) => (
-                                                <div key={key} className="flex gap-2 items-start">
-                                                    <div className="flex-1">
-                                                        <label className="block text-sm font-medium text-slate-300 mb-2 capitalize">
-                                                            {key.replace(/([a-z])([A-Z])/g, '$1 $2')}
-                                                        </label>
-                                                        <input
-                                                            type="text"
-                                                            value={(value as string) || ''}
-                                                            onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
-                                                            placeholder={`Entrez ${key}`}
-                                                        />
-                                                    </div>
-                                                    <button
-                                                        onClick={() => handleDeleteField(key)}
-                                                        className="mt-8 p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
-                                                        title="Supprimer ce champ"
-                                                    >
-                                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
-                                                    </button>
+                                    {/* Champs générés depuis le formulaire de la profession */}
+                                    {formSchema && formSchema.form.length > 0 && (
+                                        <div className="border-t border-slate-700 pt-4 space-y-4">
+                                            <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">
+                                                {formSchema.form_label}
+                                            </h3>
+                                            {formSchema.form.map((field: FormFieldSchema) => (
+                                                <div key={field.unique_id}>
+                                                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                                                        {field.field_label}
+                                                        {field.field_required && <span className="text-rose-400 ml-1">*</span>}
+                                                        {field.field_type === 'dicom' && (
+                                                            <span className="ml-2 text-xs text-sky-400 font-mono bg-sky-500/10 px-1.5 py-0.5 rounded">DICOM</span>
+                                                        )}
+                                                    </label>
+                                                    {renderFormField(field)}
                                                 </div>
                                             ))}
                                         </div>
                                     )}
 
-                                    {/* Add new custom field */}
-                                    <div className="border-t border-slate-700 pt-4 mt-6">
-                                        <h3 className="text-sm font-semibold text-teal-400 mb-3 flex items-center gap-2">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                            </svg>
-                                            Ajouter un nouveau champ
-                                        </h3>
-                                        <div className="flex gap-2">
-                                            <input
-                                                type="text"
-                                                value={newFieldName}
-                                                onChange={(e) => setNewFieldName(e.target.value)}
-                                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors text-sm"
-                                                placeholder="Nom du champ"
-                                            />
-                                            <input
-                                                type="text"
-                                                value={newFieldValue}
-                                                onChange={(e) => setNewFieldValue(e.target.value)}
-                                                className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors text-sm"
-                                                placeholder="Valeur"
-                                            />
-                                            <button
-                                                onClick={handleAddField}
-                                                className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white transition-colors flex items-center gap-1"
-                                                title="Ajouter"
-                                            >
-                                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                                </svg>
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {/* Save error */}
+                                    {/* Erreur de sauvegarde */}
                                     {saveError && (
                                         <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
                                             <p className="text-red-400 text-sm">{saveError}</p>
@@ -641,7 +635,7 @@ const Meetings: React.FC = () => {
                         </div>
 
                         <div className="p-6 space-y-5">
-                            {/* Meeting fields */}
+                            {/* Informations de la réunion */}
                             <div>
                                 <label className="block text-sm font-medium text-slate-300 mb-2">
                                     Sujet <span className="text-red-400">*</span>
@@ -668,7 +662,7 @@ const Meetings: React.FC = () => {
                                 />
                             </div>
 
-                            {/* Patient fields */}
+                            {/* Identité du patient */}
                             <div className="border-t border-slate-700 pt-5">
                                 <h3 className="text-sm font-semibold text-teal-400 mb-4 flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -743,7 +737,7 @@ const Meetings: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Participants section */}
+                            {/* Sélection des participants */}
                             <div className="border-t border-slate-700 pt-5">
                                 <h3 className="text-sm font-semibold text-teal-400 mb-4 flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -782,7 +776,7 @@ const Meetings: React.FC = () => {
                                 </div>
                             </div>
 
-                            {/* Error display */}
+                            {/* Erreur de création */}
                             {createError && (
                                 <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">
                                     {createError}
