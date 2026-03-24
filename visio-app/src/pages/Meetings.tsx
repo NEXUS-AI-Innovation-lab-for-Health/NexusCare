@@ -30,10 +30,10 @@ interface FormFieldSchema {
     unique_id: string;
     field_key: string;
     // 'dicom' s'affiche comme un champ texte mais le type est conservé pour que le backend puisse le traiter comme du DICOM
-    field_type: 'datepicker' | 'text' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom';
-    field_mode: 'edit' | 'view';
+    field_type: 'datepicker' | 'text' | 'input:text' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom' | 'notice';
+    field_mode?: 'edit' | 'view';
     field_label: string;
-    field_options?: string[];
+    field_options?: { options: { label: string }[]; source: string };
 }
 
 interface FormSchema {
@@ -249,10 +249,31 @@ const Meetings: React.FC = () => {
                         <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} disabled={isReadOnly} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500" />
                     </div>
                 );
+            case 'select':
+                return (
+                    <select
+                        value={value}
+                        onChange={e => onChange(e.target.value)}
+                        disabled={isReadOnly}
+                        className={isReadOnly ? readOnlyClass : baseClass}
+                    >
+                        <option value="">-- Sélectionner --</option>
+                        {field.field_options?.options.map(opt => (
+                            <option key={opt.label} value={opt.label}>{opt.label}</option>
+                        ))}
+                    </select>
+                );
+            case 'notice':
+                return (
+                    <div className="flex items-start gap-2 bg-teal-900/30 border border-teal-700/50 rounded-lg px-4 py-3 text-teal-300 text-sm">
+                        <span className="mt-0.5">ℹ️</span>
+                        <span>{field.field_label}</span>
+                    </div>
+                );
             case 'dicom':
                 // Champ texte côté UI mais le type 'dicom' reste dans le payload pour le traitement backend
                 return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} placeholder="Identifiant DICOM" className={isReadOnly ? readOnlyClass : baseClass} />;
-            default: // text et select tombent ici
+            default:
                 return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
         }
     };
@@ -273,6 +294,16 @@ const Meetings: React.FC = () => {
         for (const [k, v] of Object.entries(editForm)) {
             if (!METADATA_FIELDS.includes(k)) payload[k] = v;
         }
+
+        const labels: Record<string, string> = {};
+        MANDATORY_FIELDS.forEach(f => { labels[f] = MANDATORY_LABELS[f] || f; });
+        if (formSchema) {
+            for (const field of formSchema.form) {
+                if (field.field_key) labels[field.field_key] = field.field_label;
+            }
+        }
+        payload._labels = labels;
+        payload.submittedBy = user.id;
 
         try {
             let patientRecordId = editForm.id;
@@ -534,24 +565,13 @@ const Meetings: React.FC = () => {
                                 <div className="space-y-4 max-h-[60vh] overflow-y-auto">
                                     {/* Champs fixes préremplis automatiquement */}
                                     <div className="space-y-3">
-                                        <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Champs obligatoires</h3>
-                                        {MANDATORY_FIELDS.map((key) => (
-                                            <div key={key}>
-                                                <label className="block text-sm font-medium text-slate-300 mb-2">
-                                                    {MANDATORY_LABELS[key] || key} <span className="text-rose-400">*</span>
-                                                </label>
-                                                <input
-                                                    type="text"
-                                                    value={(editForm[key] as string) || ''}
-                                                    onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                                                    readOnly
-                                                    className="w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-400 cursor-not-allowed"
-                                                />
-                                            </div>
-                                        ))}
+                                        <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Patient concerné</h3>
+                                        <div className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3">
+                                            <span className="text-white font-semibold">{editForm.lastName || ''} {editForm.firstName || ''}</span>
+                                        </div>
                                     </div>
 
-                                    {/* Champs générés depuis le formulaire de la profession */}
+                                    {/* Champs générés depuis le formulaire OLGA de la profession */}
                                     {formSchema && formSchema.form.length > 0 && (
                                         <div className="border-t border-slate-700 pt-4 space-y-4">
                                             <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">
