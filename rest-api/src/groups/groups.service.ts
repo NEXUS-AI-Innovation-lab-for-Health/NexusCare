@@ -13,6 +13,7 @@ export class GroupsService {
       data: {
         name: dto.name,
         createdById: dto.createdById,
+        meetingId: dto.meetingId,
         members: {
           create: allMemberIds.map((userId) => ({ userId })),
         },

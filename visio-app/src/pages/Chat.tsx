@@ -51,6 +51,9 @@ const Chat: React.FC = () => {
     const usersRef = useRef<User[]>([]);
     const userRef = useRef<User | null>(null);
 
+    // Group details modal
+    const [showGroupDetails, setShowGroupDetails] = useState(false);
+
     // Group creation modal
     const [showCreateGroup, setShowCreateGroup] = useState(false);
     const [newGroupName, setNewGroupName] = useState('');
@@ -261,16 +264,22 @@ const Chat: React.FC = () => {
     const conversationHeader = () => {
         if (conversationType === 'group' && selectedGroup) {
             return (
-                <div className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center gap-3 shrink-0">
+                <div
+                    onClick={() => setShowGroupDetails(true)}
+                    className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center gap-3 shrink-0 cursor-pointer hover:bg-slate-800/60 transition-colors"
+                >
                     <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
                         <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
                     </div>
-                    <div>
+                    <div className="flex-1">
                         <p className="font-semibold text-white">{selectedGroup.name}</p>
                         <p className="text-xs text-teal-400">{selectedGroup.members.length} membre(s)</p>
                     </div>
+                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                 </div>
             );
         }
@@ -515,6 +524,75 @@ const Chat: React.FC = () => {
                     </>
                 )}
             </div>
+
+            {/* Group Details Modal */}
+            {showGroupDetails && selectedGroup && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+                    <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col">
+                        <div className="flex items-center justify-between p-6 border-b border-slate-800">
+                            <h2 className="text-lg font-bold text-white">Détails du groupe</h2>
+                            <button onClick={() => setShowGroupDetails(false)} className="text-slate-400 hover:text-white transition-colors">
+                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
+                            {/* Group name */}
+                            <div className="flex items-center gap-4">
+                                <div className="w-14 h-14 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
+                                    <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
+                                    </svg>
+                                </div>
+                                <div>
+                                    <p className="text-xl font-bold text-white">{selectedGroup.name}</p>
+                                    <p className="text-sm text-slate-400">Créé par {selectedGroup.createdBy.firstName} {selectedGroup.createdBy.lastName}</p>
+                                </div>
+                            </div>
+
+                            {/* Members list */}
+                            <div>
+                                <p className="text-sm font-medium text-slate-300 mb-3">{selectedGroup.members.length} membre(s)</p>
+                                <div className="space-y-1 border border-slate-700 rounded-lg overflow-hidden">
+                                    {selectedGroup.members.map((member) => {
+                                        const isCreator = member.userId === selectedGroup.createdById;
+                                        return (
+                                            <div key={member.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 transition-colors">
+                                                <div className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center shrink-0">
+                                                    <span className="text-white text-xs font-semibold">
+                                                        {(member.user.firstName?.[0] || '').toUpperCase()}{(member.user.lastName?.[0] || '').toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                <div className="min-w-0 flex-1">
+                                                    <p className="text-sm text-white truncate">
+                                                        {member.user.firstName} {member.user.lastName}
+                                                        {member.userId === user?.id && <span className="text-teal-400 ml-1">(vous)</span>}
+                                                    </p>
+                                                    <p className="text-xs text-slate-400 truncate">{member.user.email}</p>
+                                                </div>
+                                                {isCreator && (
+                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-600/20 text-indigo-300">Admin</span>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center justify-end p-6 border-t border-slate-800">
+                            <button
+                                onClick={() => setShowGroupDetails(false)}
+                                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                            >
+                                Fermer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Create Group Modal */}
             {showCreateGroup && (

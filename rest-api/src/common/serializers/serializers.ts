@@ -89,6 +89,7 @@ export function serializeMeeting(m: any) {
     scheduledDate: m.scheduledDate,
     startedAt: m.startedAt,
     duration: m.duration,
+    groupChatId: m.groupChatId ?? null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   };
