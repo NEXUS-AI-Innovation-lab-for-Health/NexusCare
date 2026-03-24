@@ -1,8 +1,8 @@
 import React, { useState, useRef, useCallback } from 'react';
 
-const REPORT_API_URL =
-    import.meta.env.VITE_REPORT_API_URL ||
-    `${window.location.protocol}//${window.location.hostname}:8000`;
+const API_URL =
+    import.meta.env.VITE_API_URL ||
+    `${window.location.protocol}//${window.location.hostname}:3000`;
 
 type Step = 'idle' | 'recording' | 'recorded' | 'transcribing' | 'generating' | 'done' | 'error';
 
@@ -18,7 +18,7 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
     const [transcription, setTranscription] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
     const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-    const [meetingType, setMeetingType] = useState('medical');
+
     const [mode, setMode] = useState<'audio' | 'text'>('audio');
     const [manualText, setManualText] = useState('');
     const [recordingTime, setRecordingTime] = useState(0);
@@ -97,7 +97,7 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
             form.append('whisper_model', 'small');
             form.append('language', 'fr');
 
-            const res = await fetch(`${REPORT_API_URL}/transcribe`, { method: 'POST', body: form });
+            const res = await fetch(`${API_URL}/ai/transcribe`, { method: 'POST', body: form });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: res.statusText }));
                 throw new Error(err.detail || 'Transcription échouée');
@@ -106,7 +106,11 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
             setTranscription(data.transcription);
             setStep('recorded');
         } catch (err: any) {
-            setErrorMsg(err.message);
+            setErrorMsg(
+                err instanceof TypeError
+                    ? `Impossible de contacter le serveur (${API_URL}). Vérifiez qu'il est démarré.`
+                    : err.message,
+            );
             setStep('error');
         }
     }, [audioBlob]);
@@ -118,11 +122,11 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
             const textToSend = mode === 'text' ? manualText : transcription;
             if (!textToSend?.trim()) throw new Error('Aucun texte à envoyer');
 
-            const form = new FormData();
-            form.append('text', textToSend);
-            form.append('meeting_type', meetingType);
-
-            const res = await fetch(`${REPORT_API_URL}/generate/text`, { method: 'POST', body: form });
+            const res = await fetch(`${API_URL}/ai/generate/text`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text: textToSend, meeting_type: 'medical' }),
+            });
             if (!res.ok) {
                 const err = await res.json().catch(() => ({ detail: res.statusText }));
                 throw new Error(err.detail || 'Génération échouée');
@@ -132,10 +136,14 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
             setPdfUrl(URL.createObjectURL(blob));
             setStep('done');
         } catch (err: any) {
-            setErrorMsg(err.message);
+            setErrorMsg(
+                err instanceof TypeError
+                    ? `Impossible de contacter le serveur (${API_URL}). Vérifiez qu'il est démarré.`
+                    : err.message,
+            );
             setStep('error');
         }
-    }, [manualText, transcription, meetingType, mode]);
+    }, [manualText, transcription, mode]);
 
     const fmtTime = (s: number) =>
         `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
@@ -190,17 +198,6 @@ const ReportGeneratorModal: React.FC<ReportGeneratorModalProps> = ({ isOpen, onC
                         </button>
                     </div>
 
-                    {/* Meeting type */}
-                    <select
-                        value={meetingType}
-                        onChange={(e) => setMeetingType(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl bg-slate-800 border border-slate-700 text-slate-100 text-sm focus:border-rose-500 focus:outline-none"
-                    >
-                        <option value="medical">Réunion Médicale</option>
-                        <option value="general">Réunion Générale</option>
-                        <option value="business">Réunion Business</option>
-                        <option value="technical">Réunion Technique</option>
-                    </select>
 
                     {/* ── Audio mode ── */}
                     {mode === 'audio' && (
