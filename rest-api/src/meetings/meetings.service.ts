@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { GroupsService } from '../groups/groups.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { UpdateMeetingDto } from './dto/update-meeting.dto';
 import { MarkFormFilledDto } from './dto/add-patient-record.dto';
@@ -19,9 +20,13 @@ const MEETING_INCLUDE = {
 
 @Injectable()
 export class MeetingsService {
-    constructor(private prisma: PrismaService) {}
+    constructor(
+        private prisma: PrismaService,
+        private groupsService: GroupsService,
+    ) {}
 
     async create(createMeetingDto: CreateMeetingDto) {
+        // 1. Create the meeting
         const meeting = await this.prisma.meeting.create({
             data: {
                 roomId: uuidv4(),
@@ -45,7 +50,24 @@ export class MeetingsService {
             },
             include: MEETING_INCLUDE,
         });
-        return serializeMeeting(meeting);
+
+        // 2. Create the group chat linked to this meeting
+        const memberIds = createMeetingDto.participants.map(p => p.user);
+        const group = await this.groupsService.create({
+            name: createMeetingDto.subject,
+            createdById: createMeetingDto.roomAdmin,
+            memberIds,
+            meetingId: meeting.id,
+        });
+
+        // 3. Link group chat to meeting
+        const updatedMeeting = await this.prisma.meeting.update({
+            where: { id: meeting.id },
+            data: { groupChatId: group.id },
+            include: MEETING_INCLUDE,
+        });
+
+        return serializeMeeting(updatedMeeting);
     }
 
     async findAll() {
@@ -98,7 +120,7 @@ export class MeetingsService {
     async update(id: string, updateMeetingDto: UpdateMeetingDto, requesterId?: string) {
         const meeting = await this.prisma.meeting.findUnique({
             where: { id },
-            include: { participants: true },
+            include: { participants: true, groupChat: true },
         });
 
         if (!meeting) {
@@ -157,6 +179,9 @@ export class MeetingsService {
                     };
                 }),
             };
+
+            // Sync group chat members with updated participants (creates group if none exists)
+            await this.syncGroupChatMembers(meeting, dtoParticipants.map(p => p.user));
         }
 
         const updated = await this.prisma.meeting.update({
@@ -300,6 +325,14 @@ export class MeetingsService {
                     formFilled: false,
                 },
             });
+
+            // Add to group chat, or create group if none exists
+            if (meeting.groupChatId) {
+                await this.groupsService.addMember(meeting.groupChatId, participantId);
+            } else {
+                const allParticipantIds = [...meeting.participants.map(p => p.userId), participantId];
+                await this.createGroupChatForMeeting(meeting, allParticipantIds);
+            }
         }
 
         return this.findOne(meetingId);
@@ -315,7 +348,67 @@ export class MeetingsService {
             where: { meetingId, userId: participantId },
         });
 
+        // Remove from group chat, or create group with remaining participants if none exists
+        if (meeting.groupChatId) {
+            await this.groupsService.removeMember(meeting.groupChatId, participantId);
+        } else {
+            const remainingMeeting = await this.prisma.meeting.findUnique({
+                where: { id: meetingId },
+                include: { participants: true },
+            });
+            if (remainingMeeting) {
+                const remainingIds = remainingMeeting.participants.map(p => p.userId);
+                await this.createGroupChatForMeeting(remainingMeeting, remainingIds);
+            }
+        }
+
         return this.findOne(meetingId);
+    }
+
+    /**
+     * Create a group chat for a meeting that doesn't have one yet.
+     * Returns the created group's ID.
+     */
+    private async createGroupChatForMeeting(meeting: { id: string; subject: string; roomAdminId: string }, memberIds: string[]): Promise<string> {
+        const group = await this.groupsService.create({
+            name: meeting.subject,
+            createdById: meeting.roomAdminId,
+            memberIds,
+            meetingId: meeting.id,
+        });
+
+        await this.prisma.meeting.update({
+            where: { id: meeting.id },
+            data: { groupChatId: group.id },
+        });
+
+        return group.id;
+    }
+
+    /**
+     * Sync group chat members to match the given participant user IDs.
+     * If no group chat exists, create one.
+     */
+    private async syncGroupChatMembers(meeting: { id: string; subject: string; roomAdminId: string; groupChatId: string | null }, newParticipantIds: string[]) {
+        if (!meeting.groupChatId) {
+            await this.createGroupChatForMeeting(meeting, newParticipantIds);
+            return;
+        }
+
+        const group = await this.groupsService.findById(meeting.groupChatId);
+        if (!group) {
+            await this.createGroupChatForMeeting(meeting, newParticipantIds);
+            return;
+        }
+
+        const currentMemberIds = group.members.map((m: any) => m.userId);
+        const toAdd = newParticipantIds.filter(id => !currentMemberIds.includes(id));
+        const toRemove = currentMemberIds.filter((id: string) => !newParticipantIds.includes(id));
+
+        await Promise.all([
+            ...toAdd.map(id => this.groupsService.addMember(meeting.groupChatId!, id)),
+            ...toRemove.map(id => this.groupsService.removeMember(meeting.groupChatId!, id)),
+        ]);
     }
 
     async updateParticipantVisibility(
