@@ -12,6 +12,22 @@ const MANDATORY_LABELS: Record<string, string> = {
   firstName: 'Prénom', lastName: 'Nom', profession: 'Profession',
 };
 
+interface FormFieldSchema {
+  unique_id: string;
+  field_key?: string;
+  field_type: 'datepicker' | 'text' | 'input:text' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom' | 'notice';
+  field_mode?: 'edit' | 'view';
+  field_label: string;
+  field_required?: boolean;
+  field_hint?: string;
+  field_options?: { options: { label: string }[]; source: string };
+}
+
+interface FormSchema {
+  form_label: string;
+  form: FormFieldSchema[];
+}
+
 const SERVER_URL = import.meta.env.VITE_WS_URL || "http://localhost:4000";
 
 // ICE servers par défaut
@@ -133,6 +149,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [newFieldValue, setNewFieldValue] = useState('');
   const [saveError, setSaveError] = useState('');
   const [myPatientRecordId, setMyPatientRecordId] = useState<string | null>(null);
+  const [formSchema, setFormSchema] = useState<FormSchema | null>(null);
+  const [patientLabelMap, setPatientLabelMap] = useState<Record<string, string>>({});
+  const [patientSchemaFields, setPatientSchemaFields] = useState<FormFieldSchema[]>([]);
 
   const [participantNames, setParticipantNames] = useState<Map<string, string>>(new Map());
 
@@ -556,6 +575,42 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
 
   const fsCols = visibleStreams.length <= 1 ? 1 : visibleStreams.length <= 4 ? 2 : 3;
 
+  useEffect(() => {
+    if (!selectedPatient) {
+      setPatientLabelMap({});
+      setPatientSchemaFields([]);
+      return;
+    }
+
+    const submittedById = selectedPatient.submittedBy?.id ?? selectedPatient.submittedBy;
+    const isOwnRecord = submittedById === currentUser?.id;
+
+    let idForm: string | undefined;
+    if (isOwnRecord) {
+      idForm = currentUser?.profession?.idForm;
+    } else {
+      const match = currentMeeting?.participants?.find(
+        (p: any) => (p.user?.id ?? p.user) === submittedById
+      );
+      idForm = match?.profession?.idForm;
+    }
+
+    if (!idForm) {
+      setPatientSchemaFields([]);
+      return;
+    }
+
+    api.getFormById(idForm).then((schema: FormSchema) => {
+      if (!schema) return;
+      const map: Record<string, string> = {};
+      for (const field of schema.form) {
+        if (field.field_key) map[field.field_key] = field.field_label;
+      }
+      setPatientLabelMap(map);
+      setPatientSchemaFields(schema.form);
+    }).catch(() => {});
+  }, [selectedPatient, currentMeeting]);
+
   const handleSaveEdit = async () => {
     setSaveError('');
     // Validate mandatory fields
@@ -568,6 +623,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
 
     try {
       const { id, createdAt, updatedAt, submittedBy, filledAt, ...payload } = editForm;
+      payload.submittedBy = currentUser?.id;
       const recordId = myPatientRecordId;
 
       if (recordId) {
@@ -631,87 +687,103 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                 <div className="bg-red-500/20 border border-red-500/50 text-red-300 px-4 py-2 rounded-lg text-sm">{saveError}</div>
               )}
 
-              {/* Mandatory fields */}
+              {/* Patient concerné — lecture seule, prérempli automatiquement */}
               <div>
-                <h3 className="text-sm font-semibold text-teal-400 mb-3">Champs obligatoires</h3>
-                {MANDATORY_FIELDS.map((key) => (
-                  <div key={key} className="mb-3">
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      {MANDATORY_LABELS[key] || key} <span className="text-red-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm[key] ?? ''}
-                      onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
-                      placeholder={MANDATORY_LABELS[key] || key}
-                    />
-                  </div>
-                ))}
-              </div>
-
-              {/* Custom fields */}
-              {Object.entries(editForm)
-                .filter(([key]) => !MANDATORY_FIELDS.includes(key) && !METADATA_FIELDS.includes(key) && !['__v', 'submittedBy', 'filledAt'].includes(key))
-                .map(([key, value]) => (
-                <div key={key} className="flex gap-2 items-start">
-                  <div className="flex-1">
-                    <label className="block text-sm font-medium text-slate-300 mb-2">
-                      {key.charAt(0).toUpperCase() + key.slice(1)}
-                    </label>
-                    <input
-                      type="text"
-                      value={value ?? ''}
-                      onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
-                      className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
-                      placeholder={`Entrez ${key}`}
-                    />
-                  </div>
-                  <button
-                    onClick={() => handleDeleteField(key)}
-                    className="mt-8 p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
-                    title="Supprimer ce champ"
-                  >
-                    <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-
-              <div className="border-t border-slate-700 pt-4 mt-6">
-                <h3 className="text-sm font-semibold text-teal-400 mb-3 flex items-center gap-2">
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                  </svg>
-                  Ajouter un nouveau champ
-                </h3>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={newFieldName}
-                    onChange={(e) => setNewFieldName(e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors text-sm"
-                    placeholder="Nom du champ"
-                  />
-                  <input
-                    type="text"
-                    value={newFieldValue}
-                    onChange={(e) => setNewFieldValue(e.target.value)}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors text-sm"
-                    placeholder="Valeur"
-                  />
-                  <button
-                    onClick={handleAddField}
-                    className="px-4 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white transition-colors flex items-center gap-1"
-                    title="Ajouter"
-                  >
-                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                    </svg>
-                  </button>
+                <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider mb-3">Patient concerné</h3>
+                <div className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3">
+                  <span className="text-white font-semibold">{editForm.lastName ?? ''} {editForm.firstName ?? ''}</span>
                 </div>
               </div>
+
+              {/* Custom fields — schema-driven si disponible, sinon fallback sur editForm */}
+              {formSchema ? (
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold text-teal-400">{formSchema.form_label}</h3>
+                  {formSchema.form.map((field) => {
+                    if (field.field_type === 'notice') {
+                      return (
+                        <div key={field.unique_id} className="flex items-start gap-2 bg-teal-900/30 border border-teal-700/50 rounded-lg px-4 py-3 text-teal-300 text-sm">
+                          <span className="mt-0.5">ℹ️</span>
+                          <span>{field.field_label}</span>
+                        </div>
+                      );
+                    }
+                    if (!field.field_key) return null;
+                    const value = editForm[field.field_key] ?? '';
+                    const inputClass = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors';
+                    const onChange = (val: any) => setEditForm((prev: Record<string, any>) => ({ ...prev, [field.field_key!]: val }));
+                    let control: React.ReactNode;
+                    switch (field.field_type) {
+                      case 'select':
+                        control = (
+                          <select value={value} onChange={(e) => onChange(e.target.value)} className={inputClass}>
+                            <option value="">-- Sélectionner --</option>
+                            {field.field_options?.options.map((opt) => (
+                              <option key={opt.label} value={opt.label}>{opt.label}</option>
+                            ))}
+                          </select>
+                        );
+                        break;
+                      case 'checkbox':
+                        control = (
+                          <div className="flex items-center h-10">
+                            <input type="checkbox" checked={!!value} onChange={(e) => onChange(e.target.checked)} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500" />
+                          </div>
+                        );
+                        break;
+                      case 'datepicker':
+                        control = <input type="date" value={value} onChange={(e) => onChange(e.target.value)} className={inputClass} />;
+                        break;
+                      case 'number':
+                        control = <input type="number" value={value} onChange={(e) => onChange(e.target.value)} className={inputClass} />;
+                        break;
+                      case 'textarea':
+                        control = <textarea value={value} onChange={(e) => onChange(e.target.value)} rows={3} className={`${inputClass} resize-none`} />;
+                        break;
+                      default:
+                        control = <input type="text" value={value} onChange={(e) => onChange(e.target.value)} className={inputClass} />;
+                    }
+                    return (
+                      <div key={field.unique_id}>
+                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                          {field.field_label}
+                          {field.field_required && <span className="text-red-400 ml-1">*</span>}
+                        </label>
+                        {control}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                Object.entries(editForm)
+                  .filter(([key]) => !MANDATORY_FIELDS.includes(key) && !METADATA_FIELDS.includes(key) && !['__v', 'submittedBy', 'filledAt'].includes(key))
+                  .map(([key, value]) => (
+                  <div key={key} className="flex gap-2 items-start">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-slate-300 mb-2">
+                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                      </label>
+                      <input
+                        type="text"
+                        value={value ?? ''}
+                        onChange={(e) => setEditForm({ ...editForm, [key]: e.target.value })}
+                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                        placeholder={`Entrez ${key}`}
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleDeleteField(key)}
+                      className="mt-8 p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-colors"
+                      title="Supprimer ce champ"
+                    >
+                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                      </svg>
+                    </button>
+                  </div>
+                ))
+              )}
+
             </div>
 
             <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-800 bg-slate-900/50">
@@ -1051,18 +1123,27 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
               <div className="flex items-center justify-between mb-3">
                 <h3 className="text-slate-300 font-semibold uppercase text-xs tracking-wider">Participants</h3>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setSaveError('');
+                    setFormSchema(null);
                     // Find MY record among patientsData
                     const myRecord = patientsData.find(
                       (p: any) => p.submittedBy?.id === currentUser?.id
                     );
                     const base: Record<string, any> = myRecord ? { ...myRecord } : {};
-                    for (const f of MANDATORY_FIELDS) {
-                      if (!(f in base)) base[f] = '';
-                    }
+                    base.firstName = currentMeeting?.patientFirstName || base.firstName || '';
+                    base.lastName = currentMeeting?.patientLastName || base.lastName || '';
+                    base.profession = currentUser?.profession?.name || base.profession || '';
                     setMyPatientRecordId(myRecord?.id || null);
                     setEditForm(base);
+                    // Fetch form schema from user's profession
+                    const idForm = currentUser?.profession?.idForm;
+                    if (idForm) {
+                      try {
+                        const schema = await api.getFormById(idForm);
+                        if (schema) setFormSchema(schema);
+                      } catch {}
+                    }
                     setIsEditModalOpen(true);
                   }}
                   className="bg-teal-600 hover:bg-teal-700 text-white px-3 py-1 rounded-lg text-xs transition-all flex items-center gap-1"
@@ -1101,18 +1182,58 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                   <span>📋</span> Dossier Médical
                 </h2>
                 <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 auto-rows-min">
-                  {selectedPatient && Object.entries(selectedPatient)
-                    .filter(([key]) => !['id', '__v', 'createdAt', 'updatedAt', 'submittedBy', 'filledAt'].includes(key))
-                    .map(([key, value]) => (
-                    <div key={key} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-fit">
-                      <div className="text-white/60 text-sm mb-1">
-                        {key.charAt(0).toUpperCase() + key.slice(1)}
+                  {selectedPatient && (() => {
+                    const EXCLUDED = ['id', '__v', 'createdAt', 'updatedAt', 'submittedBy', 'filledAt', '_labels'];
+                    // Patient concerné (firstName + lastName combinés, profession masquée)
+                    const mandatoryCards = [
+                      <div key="patient-name" className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-fit">
+                        <div className="text-white/60 text-sm mb-1">Patient concerné</div>
+                        <div className="text-white font-semibold text-base wrap-break-words overflow-wrap-anywhere">
+                          {(selectedPatient.lastName || selectedPatient.firstName)
+                            ? `${selectedPatient.lastName || ''} ${selectedPatient.firstName || ''}`.trim()
+                            : <span className="text-slate-500 italic text-sm">—</span>}
+                        </div>
                       </div>
-                      <div className="text-white font-semibold text-base wrap-break-words overflow-wrap-anywhere">
-                        {String(value)}
-                      </div>
-                    </div>
-                  ))}
+                    ];
+
+                    if (patientSchemaFields.length > 0) {
+                      // Itérer sur le schema pour afficher tous les champs (même vides)
+                      const schemaCards = patientSchemaFields
+                        .filter((field) => field.field_type !== 'notice')
+                        .map((field) => {
+                          const key = field.field_key!;
+                          const value = selectedPatient[key];
+                          const isEmpty = value == null || value === '';
+                          return (
+                            <div key={field.unique_id} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-fit">
+                              <div className="text-white/60 text-sm mb-1">{field.field_label}</div>
+                              <div className="text-white font-semibold text-base wrap-break-words overflow-wrap-anywhere">
+                                {isEmpty
+                                  ? <span className="text-slate-500 italic text-sm">—</span>
+                                  : typeof value === 'boolean'
+                                    ? (value ? 'Oui' : 'Non')
+                                    : String(value)}
+                              </div>
+                            </div>
+                          );
+                        });
+                      return [...mandatoryCards, ...schemaCards];
+                    }
+
+                    // Fallback : clés brutes du record (si pas de schema)
+                    const labelsMap = selectedPatient._labels as Record<string, string> | undefined;
+                    const rawCards = Object.entries(selectedPatient)
+                      .filter(([key]) => !EXCLUDED.includes(key) && !MANDATORY_FIELDS.includes(key) && key !== '_labels')
+                      .map(([key, value]) => (
+                        <div key={key} className="bg-slate-800/50 p-4 rounded-lg border border-slate-700 h-fit">
+                          <div className="text-white/60 text-sm mb-1">{labelsMap?.[key] || key.charAt(0).toUpperCase() + key.slice(1)}</div>
+                          <div className="text-white font-semibold text-base wrap-break-words overflow-wrap-anywhere">
+                            {value != null && value !== '' ? String(value) : <span className="text-slate-500 italic text-sm">—</span>}
+                          </div>
+                        </div>
+                      ));
+                    return [...mandatoryCards, ...rawCards];
+                  })()}
                 </div>
               </div>
             </div>
