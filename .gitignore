@@ -8,3 +8,9 @@ rest-api/package-lock.json
 /generation_rapport/input
 rest-api/package-lock.json
 .env.prod
+/Completion_formulaire/__pycache__
+olga/.env.back
+olga/.env.front
+olga/.env.mysql
+olga/config/config.json
+olga/config/apiKey.json

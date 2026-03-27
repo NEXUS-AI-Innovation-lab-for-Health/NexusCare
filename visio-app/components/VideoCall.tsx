@@ -3,6 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { ClientToServerEvents, ServerToClientEvents } from '../types/socket';
 import { api } from '../src/services/api';
 import ReportGeneratorModal from './ReportGeneratorModal';
+import TranscriptionPanel from './TranscriptionPanel';
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -26,6 +27,18 @@ interface FormFieldSchema {
 interface FormSchema {
   form_label: string;
   form: FormFieldSchema[];
+}
+
+interface CompletionFieldInput {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  semantic_hint?: string;
+}
+
+interface CompletionResponse {
+  data?: Record<string, string | number | boolean | null>;
 }
 
 const SERVER_URL = import.meta.env.VITE_WS_URL || "http://localhost:4000";
@@ -142,7 +155,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [currentMeeting, setCurrentMeeting] = useState<any>(null);
 
-  const [activeTab, setActiveTab] = useState<'info' | 'participants' | 'chat'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'participants' | 'chat' | 'transcription'>('info');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [newFieldName, setNewFieldName] = useState('');
@@ -172,6 +185,8 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [showDeviceMenu, setShowDeviceMenu] = useState<'video' | 'audio' | 'speaker' | null>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [liveTranscript, setLiveTranscript] = useState('');
+  const [autofillStatus, setAutofillStatus] = useState('');
 
   const [audioOutputDevices, setAudioOutputDevices] = useState<MediaDeviceInfo[]>([]);
   const [selectedAudioOutputDevice, setSelectedAudioOutputDevice] = useState<string>('');
@@ -182,6 +197,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [chatMessages, setChatMessages] = useState<Array<{content: string, senderName: string, timestamp: string, isOwn: boolean}>>([]);
   const [chatInput, setChatInput] = useState('');
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const autoFillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoFillInFlightRef = useRef(false);
+  const lastProcessedTranscriptRef = useRef('');
 
   useEffect(() => {
     fetchIceServers().then(config => { iceConfigRef.current = config; });
@@ -610,6 +628,123 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
       setPatientSchemaFields(schema.form);
     }).catch(() => {});
   }, [selectedPatient, currentMeeting]);
+
+  useEffect(() => {
+    const idForm = currentUser?.profession?.idForm;
+    if (!idForm) return;
+
+    api.getFormById(idForm)
+      .then((schema: FormSchema) => {
+        if (schema) setFormSchema(schema);
+      })
+      .catch(() => {});
+  }, [currentUser?.profession?.idForm]);
+
+  const normalizeCompletionValue = useCallback((fieldType: string, rawValue: unknown) => {
+    if (rawValue === null || rawValue === undefined) return null;
+
+    if (fieldType === 'checkbox') {
+      if (typeof rawValue === 'boolean') return rawValue;
+      const value = String(rawValue).trim().toLowerCase();
+      if (['true', '1', 'oui', 'yes', 'vrai'].includes(value)) return true;
+      if (['false', '0', 'non', 'no', 'faux'].includes(value)) return false;
+      return null;
+    }
+
+    if (fieldType === 'number' || fieldType === 'input:number') {
+      const parsed = Number(rawValue);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+
+    return String(rawValue).trim();
+  }, []);
+
+  const runAutoCompletion = useCallback(async (transcriptText: string) => {
+    if (!formSchema) return;
+
+    const fieldsForCompletion: CompletionFieldInput[] = formSchema.form
+      .filter((field) => field.field_key && field.field_type !== 'notice' && field.field_type !== 'dicom')
+      .map((field) => ({
+        name: field.field_key!,
+        label: field.field_label,
+        type: field.field_type,
+        required: !!field.field_required,
+        semantic_hint: field.field_hint,
+      }));
+
+    if (!fieldsForCompletion.length) return;
+
+    const result = (await api.extractFormFromTranscript({
+      form: { fields: fieldsForCompletion },
+      text: transcriptText,
+    })) as CompletionResponse;
+    const extracted = result.data || {};
+
+    let appliedCount = 0;
+    setEditForm((prev: Record<string, any>) => {
+      const next = { ...prev };
+
+      if (!next.firstName) next.firstName = currentMeeting?.patientFirstName || '';
+      if (!next.lastName) next.lastName = currentMeeting?.patientLastName || '';
+      if (!next.profession) next.profession = currentUser?.profession?.name || '';
+
+      for (const field of fieldsForCompletion) {
+        const rawValue = extracted[field.name];
+        const currentValue = next[field.name];
+        const currentIsEmpty =
+          currentValue === null ||
+          currentValue === undefined ||
+          (typeof currentValue === 'string' && !currentValue.trim()) ||
+          currentValue === '';
+
+        if (!currentIsEmpty) continue;
+
+        const normalized = normalizeCompletionValue(field.type, rawValue);
+        if (normalized === null || normalized === undefined || normalized === '') continue;
+
+        next[field.name] = normalized;
+        appliedCount += 1;
+      }
+
+      return next;
+    });
+
+    if (appliedCount > 0) {
+      setAutofillStatus(`Auto-remplissage: ${appliedCount} champ(s) mis à jour.`);
+    }
+  }, [formSchema, currentMeeting, currentUser?.profession?.name, normalizeCompletionValue]);
+
+  useEffect(() => {
+    const transcript = liveTranscript.trim();
+    if (!transcript || !formSchema) return;
+    if (transcript.length < 80) return;
+    if (transcript === lastProcessedTranscriptRef.current) return;
+
+    if (autoFillTimerRef.current) {
+      clearTimeout(autoFillTimerRef.current);
+    }
+
+    autoFillTimerRef.current = setTimeout(async () => {
+      if (autoFillInFlightRef.current) return;
+
+      autoFillInFlightRef.current = true;
+      try {
+        await runAutoCompletion(transcript);
+        lastProcessedTranscriptRef.current = transcript;
+      } catch (error) {
+        console.error('Erreur auto-remplissage formulaire:', error);
+        setAutofillStatus('Auto-remplissage indisponible pour le moment.');
+      } finally {
+        autoFillInFlightRef.current = false;
+      }
+    }, 1800);
+
+    return () => {
+      if (autoFillTimerRef.current) {
+        clearTimeout(autoFillTimerRef.current);
+      }
+    };
+  }, [liveTranscript, formSchema, runAutoCompletion]);
 
   const handleSaveEdit = async () => {
     setSaveError('');
@@ -1154,6 +1289,9 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                   </svg>
                   <span>Mon dossier</span>
                 </button>
+                {autofillStatus && (
+                  <p className="mt-2 text-[11px] text-emerald-300">{autofillStatus}</p>
+                )}
               </div>
               <div className="space-y-2">
                 {patientsData.map((p: any) => (
@@ -1280,6 +1418,10 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
             </div>
           </div>
 
+          <div className={`${activeTab === 'transcription' ? 'absolute inset-0 z-40 bg-slate-950 w-full flex' : 'hidden'} lg:flex lg:static lg:w-80 bg-slate-900/50 backdrop-blur-sm border-l border-slate-800 flex-col`}>
+            <TranscriptionPanel onTranscriptChange={setLiveTranscript} />
+          </div>
+
           <div className="lg:hidden absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-50 md:justify-end md:gap-4 md:px-6">
             <button
               onClick={() => setActiveTab('participants')}
@@ -1301,6 +1443,13 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
             >
               <span className="text-xl">💬</span>
               <span className="text-[10px]">Chat</span>
+            </button>
+            <button
+              onClick={() => setActiveTab('transcription')}
+              className={`p-2 rounded-lg flex flex-col items-center ${activeTab === 'transcription' ? 'text-teal-400' : 'text-slate-400'}`}
+            >
+              <span className="text-xl">🎙️</span>
+              <span className="text-[10px]">Transcription</span>
             </button>
           </div>
         </div>

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import { useTranscription } from '../hooks/useTranscription';
 
 interface Meeting {
     id: string;
@@ -28,11 +29,12 @@ interface Meeting {
 interface FormFieldSchema {
     field_required: boolean;
     unique_id: string;
-    field_key: string;
+    field_key?: string;
     // 'dicom' s'affiche comme un champ texte mais le type est conservé pour que le backend puisse le traiter comme du DICOM
-    field_type: 'datepicker' | 'text' | 'input:text' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom' | 'notice';
+    field_type: 'datepicker' | 'text' | 'input:text' | 'input:number' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom' | 'notice';
     field_mode?: 'edit' | 'view';
     field_label: string;
+    field_hint?: string;
     field_options?: { options: { label: string }[]; source: string };
 }
 
@@ -43,6 +45,18 @@ interface FormSchema {
     form: FormFieldSchema[];
 }
 
+interface CompletionFieldInput {
+    name: string;
+    label: string;
+    type: string;
+    required: boolean;
+    semantic_hint?: string;
+}
+
+interface CompletionResponse {
+    data?: Record<string, string | number | boolean | null>;
+}
+
 const MANDATORY_FIELDS = ['firstName', 'lastName', 'profession'];
 const METADATA_FIELDS = ['id', 'createdAt', 'updatedAt'];
 
@@ -51,6 +65,8 @@ const MANDATORY_LABELS: Record<string, string> = {
     lastName: 'Nom',
     profession: 'Profession',
 };
+
+const MIN_TRANSCRIPT_LENGTH_FOR_AUTOFILL = 20;
 
 const Meetings: React.FC = () => {
     const navigate = useNavigate();
@@ -90,6 +106,22 @@ const Meetings: React.FC = () => {
     const [detailsSaving, setDetailsSaving] = React.useState(false);
     const [detailsError, setDetailsError] = React.useState('');
     const [editParticipants, setEditParticipants] = React.useState<string[]>([]);
+    const [liveTranscript, setLiveTranscript] = React.useState('');
+    const [autofillStatus, setAutofillStatus] = React.useState('');
+    const [autofilledKeys, setAutofilledKeys] = React.useState<string[]>([]);
+
+    const autoFillTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+    const autoFillInFlightRef = React.useRef(false);
+    const lastProcessedTranscriptRef = React.useRef('');
+
+    const {
+        transcript,
+        isRecording,
+        startRecording,
+        stopRecording,
+        clearTranscript,
+        wsStatus,
+    } = useTranscription();
 
     React.useEffect(() => {
         const storedUser = localStorage.getItem('user');
@@ -119,6 +151,10 @@ const Meetings: React.FC = () => {
         fetchData();
     }, [user]);
 
+    React.useEffect(() => {
+        setLiveTranscript(transcript);
+    }, [transcript]);
+
     const isCurrentUserFormFilled = (meeting: Meeting): boolean => {
         if (!user?.id) return false;
         const participantInfo = meeting.participants.find(
@@ -132,6 +168,9 @@ const Meetings: React.FC = () => {
         setModalType('patient');
         setSaveError('');
         setFormSchema(null);
+        setAutofillStatus('');
+        setAutofilledKeys([]);
+        clearTranscript();
 
         // Recherche de l'entrée participant de l'utilisateur et de son dossier patient
         const myParticipant = meeting.participants.find(p => p.user?.id === user?.id);
@@ -230,16 +269,19 @@ const Meetings: React.FC = () => {
     };
 
     const renderFormField = (field: FormFieldSchema) => {
-        const value = editForm[field.field_key] ?? '';
+        if (!field.field_key && field.field_type !== 'notice') return null;
+        const fieldKey = field.field_key ?? '';
+        const value = editForm[fieldKey] ?? '';
         const isReadOnly = field.field_mode === 'view';
         const baseClass = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors';
         const readOnlyClass = 'w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-400 cursor-not-allowed';
-        const onChange = (val: any) => setEditForm((prev: Record<string, any>) => ({ ...prev, [field.field_key]: val }));
+        const onChange = (val: any) => setEditForm((prev: Record<string, any>) => ({ ...prev, [fieldKey]: val }));
 
         switch (field.field_type) {
             case 'datepicker':
                 return <input type="date" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
             case 'number':
+            case 'input:number':
                 return <input type="number" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
             case 'textarea':
                 return <textarea value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} rows={3} className={isReadOnly ? readOnlyClass : `${baseClass} resize-none`} />;
@@ -277,6 +319,112 @@ const Meetings: React.FC = () => {
                 return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
         }
     };
+
+    const normalizeCompletionValue = React.useCallback((fieldType: string, rawValue: unknown) => {
+        if (rawValue === null || rawValue === undefined) return null;
+
+        if (fieldType === 'checkbox') {
+            if (typeof rawValue === 'boolean') return rawValue;
+            const value = String(rawValue).trim().toLowerCase();
+            if (['true', '1', 'oui', 'yes', 'vrai'].includes(value)) return true;
+            if (['false', '0', 'non', 'no', 'faux'].includes(value)) return false;
+            return null;
+        }
+
+        if (fieldType === 'number' || fieldType === 'input:number') {
+            const parsed = Number(rawValue);
+            return Number.isFinite(parsed) ? parsed : null;
+        }
+
+        return String(rawValue).trim();
+    }, []);
+
+    const runAutoCompletion = React.useCallback(async (transcriptText: string) => {
+        if (!formSchema) return;
+
+        const fieldsForCompletion: CompletionFieldInput[] = formSchema.form
+            .filter((field): field is FormFieldSchema & { field_key: string } => !!field.field_key && field.field_type !== 'notice' && field.field_type !== 'dicom')
+            .map((field) => ({
+                name: field.field_key,
+                label: field.field_label,
+                type: field.field_type,
+                required: !!field.field_required,
+                semantic_hint: field.field_hint || field.field_label,
+            }));
+
+        if (!fieldsForCompletion.length) return;
+
+        const result = (await api.extractFormFromTranscript({
+            form: { fields: fieldsForCompletion },
+            text: transcriptText,
+        })) as CompletionResponse;
+        const extracted = result.data || {};
+
+        let appliedCount = 0;
+        const changedKeys: string[] = [];
+        setEditForm((prev: Record<string, any>) => {
+            const next = { ...prev };
+
+            if (!next.firstName) next.firstName = selectedMeeting?.patientFirstName || '';
+            if (!next.lastName) next.lastName = selectedMeeting?.patientLastName || '';
+            if (!next.profession) next.profession = user?.profession?.name || '';
+
+            for (const field of fieldsForCompletion) {
+                const rawValue = extracted[field.name];
+                const normalized = normalizeCompletionValue(field.type, rawValue);
+                if (normalized === null || normalized === undefined || normalized === '') continue;
+
+                const currentValue = next[field.name];
+                const changed = String(currentValue ?? '') !== String(normalized);
+                if (!changed) continue;
+
+                next[field.name] = normalized;
+                appliedCount += 1;
+                changedKeys.push(field.name);
+            }
+
+            return next;
+        });
+
+        if (appliedCount > 0) {
+            setAutofillStatus(`Auto-remplissage: ${appliedCount} champ(s) mis à jour.`);
+            setAutofilledKeys(changedKeys);
+        } else {
+            setAutofillStatus('Transcription reçue, aucun nouveau champ détecté pour ce formulaire.');
+            setAutofilledKeys([]);
+        }
+    }, [formSchema, selectedMeeting?.patientFirstName, selectedMeeting?.patientLastName, user?.profession?.name, normalizeCompletionValue]);
+
+    React.useEffect(() => {
+        if (modalType !== 'patient' || !isModalOpen) return;
+        const transcriptText = liveTranscript.trim();
+        if (!transcriptText || !formSchema) return;
+        if (transcriptText.length < MIN_TRANSCRIPT_LENGTH_FOR_AUTOFILL) return;
+        if (transcriptText === lastProcessedTranscriptRef.current) return;
+
+        if (autoFillTimerRef.current) {
+            clearTimeout(autoFillTimerRef.current);
+        }
+
+        autoFillTimerRef.current = setTimeout(async () => {
+            if (autoFillInFlightRef.current) return;
+
+            autoFillInFlightRef.current = true;
+            try {
+                await runAutoCompletion(transcriptText);
+                lastProcessedTranscriptRef.current = transcriptText;
+            } catch (error) {
+                console.error('Erreur auto-remplissage formulaire:', error);
+                setAutofillStatus('Auto-remplissage indisponible pour le moment.');
+            } finally {
+                autoFillInFlightRef.current = false;
+            }
+        }, 1800);
+
+        return () => {
+            if (autoFillTimerRef.current) clearTimeout(autoFillTimerRef.current);
+        };
+    }, [liveTranscript, formSchema, modalType, isModalOpen, runAutoCompletion]);
 
     const handleSaveForm = async () => {
         if (!selectedMeeting || !user?.id) return;
@@ -375,6 +523,15 @@ const Meetings: React.FC = () => {
         } finally {
             setCreateLoading(false);
         }
+    };
+
+    const handleToggleVoice = async () => {
+        if (isRecording) {
+            stopRecording();
+            return;
+        }
+        setAutofillStatus('Dictée en cours...');
+        await startRecording();
     };
 
     return (
@@ -563,6 +720,51 @@ const Meetings: React.FC = () => {
                                 </div>
                             ) : (
                                 <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                                    <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4 space-y-3">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Remplissage vocal</h3>
+                                            <button
+                                                onClick={handleToggleVoice}
+                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isRecording ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+                                            >
+                                                {isRecording ? 'Arrêter dictée' : 'Démarrer dictée'}
+                                            </button>
+                                        </div>
+                                        <div className="text-[11px] text-slate-400">
+                                            Statut transcription: {wsStatus}
+                                        </div>
+                                        {autofillStatus && (
+                                            <p className="text-[11px] text-emerald-300">{autofillStatus}</p>
+                                        )}
+                                        {autofilledKeys.length > 0 && (
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {autofilledKeys.map((key) => (
+                                                    <span key={key} className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                                        {key}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {liveTranscript && (
+                                            <div className="bg-slate-900/70 border border-slate-700 rounded-lg p-3 max-h-28 overflow-y-auto">
+                                                <p className="text-xs text-slate-300 whitespace-pre-wrap">{liveTranscript}</p>
+                                            </div>
+                                        )}
+                                        {!!liveTranscript && !isRecording && (
+                                            <button
+                                                onClick={() => {
+                                                    clearTranscript();
+                                                    setLiveTranscript('');
+                                                    setAutofillStatus('');
+                                                    lastProcessedTranscriptRef.current = '';
+                                                }}
+                                                className="px-3 py-1 rounded-lg text-[11px] bg-slate-700 hover:bg-slate-600 text-white"
+                                            >
+                                                Effacer transcription
+                                            </button>
+                                        )}
+                                    </div>
+
                                     {/* Champs fixes préremplis automatiquement */}
                                     <div className="space-y-3">
                                         <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Patient concerné</h3>
@@ -589,6 +791,12 @@ const Meetings: React.FC = () => {
                                                     {renderFormField(field)}
                                                 </div>
                                             ))}
+                                        </div>
+                                    )}
+
+                                    {!formSchema && (
+                                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
+                                            <p className="text-amber-300 text-sm">Le schéma du formulaire distant n'est pas encore disponible. Le formulaire ne peut pas être généré.</p>
                                         </div>
                                     )}
 

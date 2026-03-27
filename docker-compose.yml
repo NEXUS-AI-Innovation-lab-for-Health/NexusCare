@@ -48,9 +48,9 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://admin:password123@postgres:5432/oncocollab
       REDIS_URL: redis://redis:6379
-      FORMS_API_URL: http://host.docker.internal:9091
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      FORMS_API_URL: ${FORMS_API_URL:-http://olga-api:9091}
+      FORM_COMPLETION_API_URL: http://completion-formulaire:8001
+      TRANSCRIPTION_WS_URL: ws://transcription-api:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -105,6 +105,8 @@ services:
       - VITE_API_URL=${API_URL}
       - VITE_WS_URL=${WEBSOCKET_URL}
       - VITE_REPORT_API_URL=${REPORT_API_URL:-}
+      - VITE_TRANSCRIPTION_WS_URL=${VITE_TRANSCRIPTION_WS_URL:-ws://localhost:8002}
+      - VITE_GROQ_API_KEY=${VITE_GROQ_API_KEY:-}
       - VITE_STUN_URL=${VITE_STUN_URL:-stun:stun.l.google.com:19302}
       - VITE_TURN_URL=${VITE_TURN_URL:-turn:localhost:3478}
       - VITE_TURN_USERNAME=${VITE_TURN_USERNAME:-admin}
@@ -141,6 +143,81 @@ services:
     networks:
       - oncocollab-network
 
+  ollama:
+    image: ollama/ollama
+    container_name: oncocollab-ollama-dev
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  ollama-init:
+    image: ollama/ollama
+    container_name: oncocollab-ollama-init-dev
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    networks:
+      - oncocollab-network
+    entrypoint: sh -c "ollama pull mistral"
+    restart: "no"
+
+  completion-formulaire:
+    build:
+      context: ./Completion_formulaire
+      dockerfile: DockerFile
+    container_name: oncocollab-completion-formulaire-dev
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - oncocollab-network
+
+  transcription-api:
+    build:
+      context: ./new_transcription/transcription_API_global
+      dockerfile: Dockerfile.api_websocket
+    container_name: oncocollab-transcription-api-dev
+    restart: unless-stopped
+    ports:
+      - "8002:8000"
+    environment:
+      GROQ_API_KEY: "${GROQ_API_KEY:-}"
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-mistral}"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   coturn:
     image: coturn/coturn
     container_name: oncocollab-coturn
@@ -164,10 +241,84 @@ services:
     networks:
       - oncocollab-network
 
+  # =====================
+  # Olga Services (sans designer)
+  # =====================
+  olga-mysql:
+    image: mysql:latest
+    container_name: olga-mysql
+    env_file:
+      - ./olga/.env.mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - olga_mysql_data:/var/lib/mysql
+    restart: unless-stopped
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  olga-phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: olga-phpmyadmin
+    ports:
+      - "81:80"
+    environment:
+      PMA_HOST: olga-mysql
+      PMA_USER: root
+      PMA_PASSWORD: rootpassword
+    depends_on:
+      olga-mysql:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - oncocollab-network
+
+  olga-api:
+    image: kirito140/olga-backend:latest
+    container_name: olga-api
+    ports:
+      - "9091:9091"
+    env_file:
+      - ./olga/.env.back
+    depends_on:
+      olga-mysql:
+        condition: service_healthy
+    volumes:
+      - ./olga/config/apiKey.json:/app/config/apiKey.json:ro
+    restart: unless-stopped
+    networks:
+      - oncocollab-network
+
+  olga-admin:
+    build:
+      context: ./olga
+      dockerfile: Dockerfile.admin
+    container_name: olga-admin
+    ports:
+      - "8081:80"
+    env_file:
+      - ./olga/.env.front
+    volumes:
+      - ./olga/config/config.json:/usr/share/nginx/html/config/config.json:ro
+    depends_on:
+      - olga-api
+    restart: unless-stopped
+    networks:
+      - oncocollab-network
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
+    driver: local
+  ollama_data:
+    driver: local
+  olga_mysql_data:
     driver: local
 
 networks:

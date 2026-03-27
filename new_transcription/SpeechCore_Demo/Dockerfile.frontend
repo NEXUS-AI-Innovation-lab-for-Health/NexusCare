@@ -1,0 +1,18 @@
+FROM node:20-slim
+
+WORKDIR /app
+
+# Copier uniquement les manifestes de dépendances en premier
+# (meilleure utilisation du cache Docker : layers stables)
+COPY package.json package-lock.json ./
+
+# Installer les dépendances fraîches (ignore le node_modules local cassé)
+RUN npm install --legacy-peer-deps
+
+# Copier le reste du projet (node_modules exclu via .dockerignore)
+COPY . .
+
+EXPOSE 5173
+
+# --host 0.0.0.0 nécessaire pour que Vite soit accessible hors du conteneur
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]

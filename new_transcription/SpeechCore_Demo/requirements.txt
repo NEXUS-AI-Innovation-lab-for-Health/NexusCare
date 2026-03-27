@@ -1,0 +1,37 @@
+# ══════════════════════════════════════════════════════════════
+# Requirements.txt pour MedicScript Backend
+# Compatible Python 3.13
+# ══════════════════════════════════════════════════════════════
+# 
+# Installation :
+# pip install -r requirements.txt
+#
+# ══════════════════════════════════════════════════════════════
+
+# ────────────────────────────────────────────────────────────
+# Framework Web
+# ────────────────────────────────────────────────────────────
+fastapi==0.104.1              # Framework API REST moderne
+uvicorn[standard]==0.24.0     # Serveur ASGI (inclut websockets)
+python-multipart==0.0.6       # Pour recevoir des fichiers via POST
+
+# ────────────────────────────────────────────────────────────
+# IA - Transcription Audio
+# ────────────────────────────────────────────────────────────
+# IMPORTANT : Version GitHub pour Python 3.13
+git+https://github.com/openai/whisper.git
+
+# ────────────────────────────────────────────────────────────
+# Communication avec Ollama
+# ────────────────────────────────────────────────────────────
+httpx==0.25.2                 # Client HTTP async pour appeler Ollama
+
+# ────────────────────────────────────────────────────────────
+# Dépendances de Whisper (installées automatiquement)
+# ────────────────────────────────────────────────────────────
+# torch                       # PyTorch (deep learning)
+# numpy                       # Calculs numériques
+# tqdm                        # Barres de progression
+# more-itertools              # Utilitaires pour itérateurs
+# tiktoken                    # Tokenizer OpenAI
+# numba                       # Accélération de code Python

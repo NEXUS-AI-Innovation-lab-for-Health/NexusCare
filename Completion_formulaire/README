@@ -1,0 +1,90 @@
+1 - installer les dépendances : pip install -r requirements.txt
+
+2 - installer ollama : https://ollama.com/download
+
+3 - lancer mistral : ollama pull mistral 
+
+4 - Tester mistral : 
+    ollama run mistral
+    Réponds uniquement avec {"status":"ok"}
+    Si repond "{"status":"ok"}" -> ok
+    Autre test possible : http://localhost:11434/ sur le navigateur -> voir Ollama is running
+
+5 - Ajouter une config dans VS code :
+    Run -> Add configuration -> Python Debugger : FastAPI
+    Vous verrez un launch.json avec :
+    {
+        // Use IntelliSense to learn about possible attributes.
+        // Hover to view descriptions of existing attributes.
+        // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+        "version": "0.2.0",
+        "configurations": [     
+            {
+                "name": "Python Debugger: FastAPI",
+                "type": "debugpy",
+                "request": "launch",
+                "module": "uvicorn",
+                "args": [
+                    "main:app",
+                    "--reload"
+                ],
+                "jinja": true
+            }
+        ]
+    }
+
+6 - Lancer le serveur : 
+    F5 ou Run -> Start Debugging
+    Puis aller sur http://127.0.0.1:8000/docs pour tester (doc Swagger)
+
+7 - test possible :
+    Tester le endpoint POST /extract (try it out) 
+    Remplacer le json par :
+    {
+        "form": {
+            "fields": [
+            {"name": "nom",
+                "label": "nom",
+                "type": "string",
+                "required": false,
+                "semantic_hint": "string"
+            },
+            {
+                "name": "prénom",
+                "label": "prénom",
+                "type": "string",
+                "required": false,
+                "semantic_hint": "string"
+            },
+            {
+                "name": "age",
+                "label": "age",
+                "type": "int",
+                "required": false,
+                "semantic_hint": "string"
+            }
+            ]
+        },
+        "text": "Bonjour, je mappelle Edouard Peyrouty et j'ai 18 ans"
+    }
+    {
+        "form": {
+            "fields": [
+            { "name": "first_name", "label": "Prénom", "type": "text" },
+            { "name": "last_name", "label": "Nom", "type": "text" },
+            { "name": "email", "label": "Email", "type": "email" },
+            { "name": "age", "label": "Age", "type": "int" }
+            ]
+        },
+        "text": "Euh… bonjour… alors je m'appelle euh Thomas… Thomas Leroy et j'ai 20 ans. L'email c'est prénom point nom arrobase gmail point com."
+    }
+
+8 - depannage Docker (erreur /extract avec "All connection attempts failed"):
+        - Cause: le service completion-formulaire n'arrive pas a joindre Ollama.
+        - Verifier que Ollama tourne sur l'hote: http://localhost:11434/ -> "Ollama is running"
+        - Avec Docker Compose, OLLAMA_HOST est configurable:
+            - PowerShell:
+                $env:OLLAMA_HOST="http://host.docker.internal:11434"
+                docker compose up -d --build completion-formulaire rest-api
+        - Si host.docker.internal n'est pas routable dans votre environnement, mettez une URL accessible depuis le conteneur
+            (ex: IP de la machine hote ou service Ollama interne au reseau Docker).

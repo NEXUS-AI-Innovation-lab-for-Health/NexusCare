@@ -1,0 +1,52 @@
+services:
+
+  # ─── API WebSocket Transcription (port 8000) ─────────────────────────────
+  # Moteurs : Vosk, Whisper (local), Gladia (cloud), Groq (cloud)
+  api-websocket:
+    build:
+      context: ./transcription_API_global
+      dockerfile: Dockerfile.api_websocket
+    ports:
+      - "8000:8000"
+    volumes:
+      # Volume persistant pour les modèles Vosk (téléchargés une seule fois)
+      - vosk_models:/app/vosk-model-fr-0.22
+      - vosk_models_small:/app/vosk-model-small-fr-0.22
+    environment:
+      # Clés API — à renseigner ici ou via un fichier .env (ne pas committer de vraies clés)
+      GLADIA_API_KEY: "${GLADIA_API_KEY:-}"
+      GROQ_API_KEY:   "${GROQ_API_KEY:-}"
+      # URL Ollama pour l'extraction de formulaire (par défaut : Ollama sur la machine hôte)
+      OLLAMA_URL:     "${OLLAMA_URL:-http://host.docker.internal:11434}"
+      OLLAMA_MODEL:   "${OLLAMA_MODEL:-mistral}"
+    # Sur Linux, host.docker.internal n'est pas résolu nativement →
+    # extra_hosts mappe l'IP de la machine hôte pour qu'Ollama soit accessible
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # ─── Frontend Demo (port 5173) ────────────────────────────────────────────
+  # Application React/Vite — se connecte au WebSocket sur le port 8000
+  # Le navigateur contacte directement ws://localhost:8000 (port exposé)
+  frontend:
+    build:
+      context: ./SpeechCore_Demo
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - api-websocket
+    restart: unless-stopped
+
+# ─── Volumes ──────────────────────────────────────────────────────────────────
+volumes:
+  vosk_models:
+    name: speechcore_vosk_grand
+  vosk_models_small:
+    name: speechcore_vosk_petit
