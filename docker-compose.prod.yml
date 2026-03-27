@@ -104,6 +104,9 @@ services:
       PORT: 3000
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      FORMS_API_URL: ${FORMS_API_URL:-http://olga-api:9091}
+      FORM_COMPLETION_API_URL: http://completion-formulaire:8001
+      TRANSCRIPTION_WS_URL: ws://transcription-api:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -157,6 +160,8 @@ services:
         VITE_API_URL: https://api-${PROJECT}.${DOMAIN}
         VITE_WS_URL: https://ws-${PROJECT}.${DOMAIN}
         VITE_REPORT_API_URL: https://reports-${PROJECT}.${DOMAIN}
+        VITE_TRANSCRIPTION_WS_URL: wss://transcription-${PROJECT}.${DOMAIN}
+        VITE_GROQ_API_KEY: ${VITE_GROQ_API_KEY:-}
         # Serveur TURN externe metered.ca (VITE_METERED_API_KEY suffit, les URLs sont récupérées dynamiquement)
         VITE_METERED_API_KEY: ${VITE_METERED_API_KEY}
         # Fallback local si pas de clé metered (non utilisé en prod)
@@ -203,6 +208,87 @@ services:
       - traefik.http.routers.generation-rapport.tls.certresolver=letsencrypt
       - traefik.http.services.generation-rapport.loadbalancer.server.port=8000
 
+  ollama:
+    image: ollama/ollama
+    container_name: oncocollab-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  ollama-init:
+    image: ollama/ollama
+    container_name: oncocollab-ollama-init
+    volumes:
+      - ollama_data:/root/.ollama
+    depends_on:
+      ollama:
+        condition: service_healthy
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    networks:
+      - oncocollab-network
+    entrypoint: sh -c "ollama pull mistral"
+    restart: "no"
+
+  completion-formulaire:
+    build:
+      context: ./Completion_formulaire
+      dockerfile: DockerFile
+    container_name: oncocollab-completion-formulaire
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.completion-formulaire.rule=Host(`forms-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.completion-formulaire.entrypoints=websecure
+      - traefik.http.routers.completion-formulaire.tls.certresolver=letsencrypt
+      - traefik.http.services.completion-formulaire.loadbalancer.server.port=8001
+
+  transcription-api:
+    build:
+      context: ./new_transcription/transcription_API_global
+      dockerfile: Dockerfile.api_websocket
+    container_name: oncocollab-transcription-api
+    restart: unless-stopped
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.transcription-api.rule=Host(`transcription-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.transcription-api.entrypoints=websecure
+      - traefik.http.routers.transcription-api.tls.certresolver=letsencrypt
+      - traefik.http.services.transcription-api.loadbalancer.server.port=8000
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
   # COTURN STUN/TURN (désactivé : on utilise metered.ca en prod)
   # coturn:
   #   image: coturn/coturn
@@ -227,6 +313,72 @@ services:
   #   networks:
   #     - oncocollab-network
 
+  # =====================
+  # Olga Services (sans designer)
+  # =====================
+  olga-mysql:
+    image: mysql:latest
+    container_name: olga-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${OLGA_MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${OLGA_MYSQL_DATABASE:-olga}
+    volumes:
+      - olga_mysql_data:/var/lib/mysql
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  olga-api:
+    image: kirito140/olga-backend:latest
+    container_name: olga-api
+    restart: unless-stopped
+    environment:
+      ADDRESS: 0.0.0.0
+      PORT: 9091
+      MYSQL_URL: jdbc:mysql://olga-mysql:3306/${OLGA_MYSQL_DATABASE:-olga}
+      MYSQL_USERNAME: root
+      MYSQL_PASSWORD: ${OLGA_MYSQL_ROOT_PASSWORD}
+      FIREBASE_KEY_PATH: /app/config/apiKey.json
+    depends_on:
+      olga-mysql:
+        condition: service_healthy
+    volumes:
+      - ./olga/config/apiKey.json:/app/config/apiKey.json:ro
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.olga-api.rule=Host(`olga-api-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.olga-api.entrypoints=websecure
+      - traefik.http.routers.olga-api.tls.certresolver=letsencrypt
+      - traefik.http.services.olga-api.loadbalancer.server.port=9091
+
+  olga-admin:
+    build:
+      context: ./olga
+      dockerfile: Dockerfile.admin
+    container_name: olga-admin
+    restart: unless-stopped
+    environment:
+      VITE_BACKEND_URL: https://olga-api-${PROJECT}.${DOMAIN}
+    volumes:
+      - ./olga/config/config.json:/usr/share/nginx/html/config/config.json:ro
+    depends_on:
+      - olga-api
+    networks:
+      - oncocollab-network
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.olga-admin.rule=Host(`olga-admin-${PROJECT}.${DOMAIN}`)
+      - traefik.http.routers.olga-admin.entrypoints=websecure
+      - traefik.http.routers.olga-admin.tls.certresolver=letsencrypt
+      - traefik.http.services.olga-admin.loadbalancer.server.port=80
+
 volumes:
   postgres_data:
     driver: local
@@ -235,6 +387,10 @@ volumes:
   letsencrypt_data:
     driver: local
   generation_rapport_output:
+    driver: local
+  ollama_data:
+    driver: local
+  olga_mysql_data:
     driver: local
 
 networks:

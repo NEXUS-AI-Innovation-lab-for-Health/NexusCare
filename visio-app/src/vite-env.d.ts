@@ -9,6 +9,8 @@ interface ImportMetaEnv {
   readonly VITE_TURN_USERNAME: string
   readonly VITE_TURN_PASSWORD: string
   readonly VITE_REPORT_API_URL: string
+  readonly VITE_TRANSCRIPTION_WS_URL: string
+  readonly VITE_GROQ_API_KEY: string
 }
 
 interface ImportMeta {

@@ -1,5 +1,17 @@
 const API_URL = import.meta.env.VITE_API_URL || `${window.location.protocol}//${window.location.hostname}:3000`;
 
+export interface FormCompletionFieldInput {
+    name: string;
+    label: string;
+    type: string;
+    required: boolean;
+    semantic_hint?: string;
+}
+
+export interface FormCompletionResponse {
+    data?: Record<string, string | number | boolean | null>;
+}
+
 export const api = {
     login: async (email: string, password: string) => {
         const response = await fetch(`${API_URL}/auth/login`, {
@@ -286,6 +298,25 @@ export const api = {
     getFormById: async (id: string) => {
         const response = await fetch(`${API_URL}/forms/${id}`);
         if (!response.ok) return null;
+        return response.json();
+    },
+
+    extractFormFromTranscript: async (payload: { form: { fields: FormCompletionFieldInput[] }; text: string }): Promise<FormCompletionResponse> => {
+        const response = await fetch(`${API_URL}/forms/extract`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+        });
+        if (!response.ok) {
+            const bodyText = await response.text();
+            try {
+                const body = JSON.parse(bodyText);
+                const message = body?.message || body?.error || bodyText;
+                throw new Error(message || `Completion formulaire indisponible (${response.status})`);
+            } catch {
+                throw new Error(bodyText || `Completion formulaire indisponible (${response.status})`);
+            }
+        }
         return response.json();
     },
 };

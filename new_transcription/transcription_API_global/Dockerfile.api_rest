@@ -1,0 +1,35 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Dépendances système
+RUN apt-get update && apt-get install -y \
+    wget unzip ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dépendances Python
+# groq : moteur Groq (Whisper-large-v3 via API)
+RUN pip install --no-cache-dir \
+    vosk \
+    faster-whisper \
+    resemblyzer \
+    noisereduce \
+    soundfile \
+    scikit-learn \
+    requests \
+    fastapi \
+    uvicorn \
+    python-multipart \
+    numpy \
+    groq
+
+# Copier les sources
+COPY audio_processing.py transcription_engines.py utils.py api_rest.py setup_vosk_models.py ./
+
+# Copier et rendre exécutable l'entrypoint
+COPY entrypoint_rest.sh ./entrypoint.sh
+RUN sed -i 's/\r//' entrypoint.sh && chmod +x entrypoint.sh
+
+EXPOSE 8000
+
+CMD ["./entrypoint.sh"]

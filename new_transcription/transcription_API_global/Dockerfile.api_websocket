@@ -1,0 +1,31 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Dépendances système
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    build-essential gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Dépendances Python
+# Whisper (local) + Groq (cloud)
+RUN pip install --no-cache-dir \
+    faster-whisper \
+    resemblyzer \
+    noisereduce \
+    soundfile \
+    scikit-learn \
+    requests \
+    fastapi \
+    uvicorn \
+    python-multipart \
+    numpy \
+    groq
+
+# Copier les sources
+COPY audio_processing.py transcription_engines.py utils.py api_websocket.py ./
+
+EXPOSE 8000
+
+CMD ["uvicorn", "api_websocket:app", "--host", "0.0.0.0", "--port", "8000"]
