@@ -197,16 +197,11 @@ services:
     environment:
       GEMINI_API_KEY: ${GEMINI_API_KEY}
       ORGANIZATION_NAME: ${ORGANIZATION_NAME:-OncoCollab}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
     volumes:
       - generation_rapport_output:/app/output
     networks:
       - oncocollab-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.generation-rapport.rule=Host(`reports-${PROJECT}.${DOMAIN}`)
-      - traefik.http.routers.generation-rapport.entrypoints=websecure
-      - traefik.http.routers.generation-rapport.tls.certresolver=letsencrypt
-      - traefik.http.services.generation-rapport.loadbalancer.server.port=8000
 
   ollama:
     image: ollama/ollama
@@ -245,7 +240,11 @@ services:
     container_name: oncocollab-completion-formulaire
     restart: unless-stopped
     environment:
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
       OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
     depends_on:
       ollama:
         condition: service_healthy
@@ -255,12 +254,6 @@ services:
       - "host.docker.internal:host-gateway"
     networks:
       - oncocollab-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.completion-formulaire.rule=Host(`forms-${PROJECT}.${DOMAIN}`)
-      - traefik.http.routers.completion-formulaire.entrypoints=websecure
-      - traefik.http.routers.completion-formulaire.tls.certresolver=letsencrypt
-      - traefik.http.services.completion-formulaire.loadbalancer.server.port=8001
 
   transcription-api:
     build:
@@ -270,18 +263,10 @@ services:
     restart: unless-stopped
     environment:
       GROQ_API_KEY: ${GROQ_API_KEY:-}
-      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks:
       - oncocollab-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.transcription-api.rule=Host(`transcription-${PROJECT}.${DOMAIN}`)
-      - traefik.http.routers.transcription-api.entrypoints=websecure
-      - traefik.http.routers.transcription-api.tls.certresolver=letsencrypt
-      - traefik.http.services.transcription-api.loadbalancer.server.port=8000
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/"]
       interval: 30s
@@ -351,12 +336,6 @@ services:
       - ./olga/config/apiKey.json:/app/config/apiKey.json:ro
     networks:
       - oncocollab-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.olga-api.rule=Host(`olga-api-${PROJECT}.${DOMAIN}`)
-      - traefik.http.routers.olga-api.entrypoints=websecure
-      - traefik.http.routers.olga-api.tls.certresolver=letsencrypt
-      - traefik.http.services.olga-api.loadbalancer.server.port=9091
 
   olga-admin:
     build:
@@ -372,12 +351,6 @@ services:
       - olga-api
     networks:
       - oncocollab-network
-    labels:
-      - traefik.enable=true
-      - traefik.http.routers.olga-admin.rule=Host(`olga-admin-${PROJECT}.${DOMAIN}`)
-      - traefik.http.routers.olga-admin.entrypoints=websecure
-      - traefik.http.routers.olga-admin.tls.certresolver=letsencrypt
-      - traefik.http.services.olga-admin.loadbalancer.server.port=80
 
 volumes:
   postgres_data:

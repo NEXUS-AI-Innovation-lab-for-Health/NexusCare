@@ -319,4 +319,33 @@ export const api = {
         }
         return response.json();
     },
+
+    ensureCollaborationRoom: async (meetingId: string): Promise<{ collaborationId: string } | null> => {
+        const response = await fetch(`${API_URL}/meetings/${meetingId}/ensure-collaboration-room`, {
+            method: 'POST',
+        }).catch(() => null);
+        if (!response?.ok) return null;
+        return response.json().catch(() => null);
+    },
+
+    uploadDicomToMeeting: async (meetingId: string, file: File): Promise<{ imageId: string }> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_URL}/meetings/${meetingId}/dicom`, { method: 'POST', body: formData });
+        if (!response.ok) {
+            const body = await response.json().catch(() => ({}));
+            throw new Error(body.message || 'DICOM upload to OncoVision failed');
+        }
+        return response.json();
+    },
+
+    uploadPatientFile: async (file: File): Promise<{ url: string; originalName: string }> => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const response = await fetch(`${API_URL}/patient-records/upload`, { method: 'POST', body: formData });
+        if (!response.ok) throw new Error('Upload échoué');
+        return response.json();
+    },
+
+    getFileUrl: (path: string) => `${API_URL}${path}`,
 };

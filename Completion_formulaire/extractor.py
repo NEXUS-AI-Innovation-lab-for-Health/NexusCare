@@ -14,6 +14,8 @@ class FormExtractor:
 
         raw_output = await self.llm.generate(prompt)
 
+        print(f"[LLM RAW] {raw_output}", flush=True)
+
         data = self.parse_llm_output(raw_output)
 
         # Garantir que TOUS les champs existent

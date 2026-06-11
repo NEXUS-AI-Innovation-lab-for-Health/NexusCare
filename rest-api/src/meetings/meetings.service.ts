@@ -1,4 +1,7 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import * as fs from 'fs';
+import * as path from 'path';
 import { PrismaService } from '../prisma/prisma.service';
 import { GroupsService } from '../groups/groups.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
@@ -20,9 +23,12 @@ const MEETING_INCLUDE = {
 
 @Injectable()
 export class MeetingsService {
+    private readonly logger = new Logger(MeetingsService.name);
+
     constructor(
         private prisma: PrismaService,
         private groupsService: GroupsService,
+        private configService: ConfigService,
     ) {}
 
     async create(createMeetingDto: CreateMeetingDto) {
@@ -60,14 +66,179 @@ export class MeetingsService {
             meetingId: meeting.id,
         });
 
-        // 3. Link group chat to meeting
-        const updatedMeeting = await this.prisma.meeting.update({
+        // 3. Create OncoVision collaboration room
+        const collaborationId = await this.createOncoVisionRoom(createMeetingDto.subject);
+
+        // 4a. Link group chat (typed Prisma update)
+        await this.prisma.meeting.update({
             where: { id: meeting.id },
             data: { groupChatId: group.id },
+        });
+
+        // 4b. Set collaborationId via raw SQL (bypasses stale generated client types)
+        if (collaborationId) {
+            await this.prisma.$executeRaw`UPDATE meetings SET "collaborationId" = ${collaborationId} WHERE id = ${meeting.id}`;
+        }
+
+        const updatedMeeting = await this.prisma.meeting.findUnique({
+            where: { id: meeting.id },
             include: MEETING_INCLUDE,
         });
 
         return serializeMeeting(updatedMeeting);
+    }
+
+    async ensureCollaborationRoom(meetingId: string): Promise<{ collaborationId: string }> {
+        const rows = await this.prisma.$queryRaw<{ collaborationId: string | null; subject: string }[]>`
+            SELECT "collaborationId", subject FROM meetings WHERE id = ${meetingId}
+        `;
+        if (!rows[0]) throw new Error('Meeting not found');
+
+        const baseUrl = this.configService.get<string>('ONCOVISION_API_URL');
+        let collaborationId = rows[0].collaborationId;
+
+        // Vérifie si la session existe encore dans OncoVision (in-memory)
+        if (collaborationId && baseUrl) {
+            const check = await fetch(`${baseUrl}/room/rooms/${collaborationId}`).catch(() => null);
+            if (check?.ok) {
+                // Room existe → relinker les DICOM manquants
+                const room = await check.json().catch(() => null);
+                if (!room?.imageIds?.length) {
+                    await this.relinkDicomFiles(meetingId, collaborationId, baseUrl);
+                }
+                return { collaborationId };
+            }
+        }
+
+        // Session perdue → recréer
+        const newId = await this.createOncoVisionRoom(rows[0].subject);
+        if (!newId) throw new Error('Could not recreate OncoVision room');
+        await this.prisma.$executeRaw`UPDATE meetings SET "collaborationId" = ${newId} WHERE id = ${meetingId}`;
+        await this.relinkDicomFiles(meetingId, newId, baseUrl!);
+        return { collaborationId: newId };
+    }
+
+    private async relinkDicomFiles(meetingId: string, collaborationId: string, baseUrl: string): Promise<void> {
+        const participants = await this.prisma.meetingParticipant.findMany({
+            where: { meetingId, formFilled: true, patientRecordId: { not: null } },
+            include: { patientRecord: true },
+        });
+
+        for (const p of participants) {
+            if (!p.patientRecord) continue;
+            const data = p.patientRecord.data as Record<string, any>;
+            // Cherche toutes les valeurs qui pointent vers un fichier .dcm / .DCM
+            for (const val of Object.values(data)) {
+                if (typeof val !== 'string') continue;
+                const isDicom = /\.(dcm|DCM)$/i.test(val);
+                if (!isDicom) continue;
+
+                // val ressemble à "/uploads/uuid.DCM"
+                const filename = val.split('/').pop()!;
+                const filePath = path.join('/app/uploads', filename);
+                if (!fs.existsSync(filePath)) continue;
+
+                try {
+                    const buffer = fs.readFileSync(filePath);
+                    const formData = new FormData();
+                    const blob = new Blob([buffer as unknown as ArrayBuffer], { type: 'application/dicom' });
+                    formData.append('file', blob, filename);
+
+                    const uploadRes = await fetch(`${baseUrl}/viewer/images/upload`, { method: 'POST', body: formData });
+                    if (!uploadRes.ok) continue;
+                    const { id: imageId } = await uploadRes.json() as { id: string };
+
+                    await fetch(`${baseUrl}/room/rooms/${collaborationId}/images`, {
+                        method: 'PATCH',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ imageId }),
+                    });
+                    this.logger.log(`DICOM ${filename} re-linked to room ${collaborationId} as ${imageId}`);
+                } catch (err) {
+                    this.logger.warn(`Could not re-link DICOM ${filename}: ${err}`);
+                }
+            }
+        }
+    }
+
+    async repairCollaborationIds(): Promise<{ repaired: number; failed: number }> {
+        const rows = await this.prisma.$queryRaw<{ id: string; subject: string }[]>`
+            SELECT id, subject FROM meetings WHERE "collaborationId" IS NULL
+        `;
+        let repaired = 0, failed = 0;
+        for (const row of rows) {
+            const collaborationId = await this.createOncoVisionRoom(row.subject);
+            if (collaborationId) {
+                await this.prisma.$executeRaw`UPDATE meetings SET "collaborationId" = ${collaborationId} WHERE id = ${row.id}`;
+                repaired++;
+            } else {
+                failed++;
+            }
+        }
+        return { repaired, failed };
+    }
+
+    async uploadDicomToRoom(meetingId: string, file: Express.Multer.File): Promise<{ imageId: string }> {
+        const baseUrl = this.configService.get<string>('ONCOVISION_API_URL');
+        if (!baseUrl) throw new Error('ONCOVISION_API_URL not configured');
+
+        const rows = await this.prisma.$queryRaw<{ collaborationId: string | null }[]>`
+            SELECT "collaborationId" FROM meetings WHERE id = ${meetingId}
+        `;
+        const collaborationId = rows[0]?.collaborationId;
+        if (!collaborationId) throw new Error('No collaboration room linked to this meeting');
+
+        // Upload DICOM to OncoVision image registry
+        const formData = new FormData();
+        const blob = new Blob([file.buffer as unknown as ArrayBuffer], { type: file.mimetype || 'application/dicom' });
+        formData.append('file', blob, file.originalname);
+
+        const uploadRes = await fetch(`${baseUrl}/viewer/images/upload`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (!uploadRes.ok) {
+            const text = await uploadRes.text();
+            throw new Error(`OncoVision image upload failed: ${uploadRes.status} ${text}`);
+        }
+        const uploadData: any = await uploadRes.json();
+        const imageId: string = uploadData.id;
+
+        // Link image_id to collaboration room
+        const patchRes = await fetch(`${baseUrl}/room/rooms/${collaborationId}/images`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageId }),
+        });
+        if (!patchRes.ok) {
+            this.logger.warn(`Failed to link image ${imageId} to room ${collaborationId}: ${patchRes.status}`);
+        }
+
+        return { imageId };
+    }
+
+    private async createOncoVisionRoom(name: string): Promise<string | null> {
+        const baseUrl = this.configService.get<string>('ONCOVISION_API_URL');
+        if (!baseUrl) {
+            this.logger.warn('ONCOVISION_API_URL not set — skipping collaboration room creation');
+            return null;
+        }
+        try {
+            const response = await fetch(`${baseUrl}/room/rooms`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, imageIds: [] }),
+            });
+            if (!response.ok) {
+                this.logger.error(`OncoVision room creation failed: ${response.status}`);
+                return null;
+            }
+            const data: any = await response.json();
+            return data?.roomId ?? data?.room_id ?? null;
+        } catch (err) {
+            this.logger.error(`OncoVision room creation error: ${err}`);
+            return null;
+        }
     }
 
     async findAll() {

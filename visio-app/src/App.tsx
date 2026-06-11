@@ -1,4 +1,6 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { CookiesProvider } from 'react-cookie';
+import { RestProvider } from './oncovision/RestProvider';
 import Home from './pages/Home';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -8,6 +10,11 @@ import WSIAnalysis from './pages/WSIAnalysis';
 import PreMeeting from './pages/PreMeeting';
 import MeetingCall from './pages/MeetingCall';
 import Profile from './pages/Profile';
+import ReportGenerator from './pages/ReportGenerator';
+
+// Passe par le proxy Vite (même origine) pour éviter CORS/mixed-content.
+// VITE_ONCOVISION_API_URL peut forcer une URL externe si nécessaire.
+const oncovisionApiUrl = import.meta.env.VITE_ONCOVISION_API_URL || window.location.origin;
 
 // Migrate localStorage user from old _id format to id
 const storedUser = localStorage.getItem('user');
@@ -32,6 +39,8 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   return (
+    <CookiesProvider>
+      <RestProvider url={oncovisionApiUrl}>
     <Router>
       <Routes>
         <Route path="/login" element={<Login />} />
@@ -71,7 +80,14 @@ export default function App() {
             <Profile />
           </ProtectedRoute>
         } />
+        <Route path="/reports" element={
+          <ProtectedRoute>
+            <ReportGenerator />
+          </ProtectedRoute>
+        } />
       </Routes>
     </Router>
+      </RestProvider>
+    </CookiesProvider>
   );
 }

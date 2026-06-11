@@ -1,4 +1,5 @@
-import { Controller, Get, Post, Put, Delete, Param, HttpException, HttpStatus, Req } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, HttpException, HttpStatus, Req, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { PatientRecordsService } from './patient-records.service';
 import type { Request } from 'express';
 
@@ -34,6 +35,13 @@ export class PatientRecordsController {
     } catch (error) {
       throw new HttpException('Failed to update patient record', HttpStatus.INTERNAL_SERVER_ERROR);
     }
+  }
+
+  @Post('upload')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadFile(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new HttpException('No file provided', HttpStatus.BAD_REQUEST);
+    return { url: `/uploads/${file.filename}`, originalName: file.originalname };
   }
 
   @Delete(':id')

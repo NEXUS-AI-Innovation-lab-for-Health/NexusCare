@@ -1,12 +1,19 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import {
+  ChevronLeft,
+  User,
+  Lock,
+  Save,
+  CheckCircle,
+  AlertCircle,
+  Eye,
+  EyeOff,
+} from 'lucide-react';
 
 const inputClass =
-  'bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors w-full';
-
-const saveButtonClass =
-  'px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-medium transition-colors';
+  'bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition-all duration-200 w-full';
 
 export default function Profile() {
   const navigate = useNavigate();
@@ -28,6 +35,8 @@ export default function Profile() {
   const [pwSuccess, setPwSuccess] = useState('');
   const [pwError, setPwError] = useState('');
   const [pwLoading, setPwLoading] = useState(false);
+  const [showCurrentPw, setShowCurrentPw] = useState(false);
+  const [showNewPw, setShowNewPw] = useState(false);
 
   useEffect(() => {
     const stored = localStorage.getItem('user');
@@ -112,68 +121,51 @@ export default function Profile() {
   if (!user) return null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-white">
-      {/* Header */}
-      <div className="border-b border-slate-800 bg-slate-900">
-        <div className="max-w-3xl mx-auto px-6 py-4 flex items-center gap-4">
+    <div className="min-h-screen bg-[#080D1A] text-slate-50">
+      <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+
+        {/* Header */}
+        <div className="flex items-center gap-4">
           <Link
             to="/"
-            className="flex items-center gap-2 text-slate-400 hover:text-white transition-colors text-sm font-medium"
+            className="flex items-center gap-2 bg-white/6 hover:bg-white/10 border border-white/8 text-slate-300 hover:text-slate-50 px-3 py-2 rounded-xl transition-all duration-200 cursor-pointer text-sm font-medium"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              className="h-4 w-4"
-              fill="none"
-              viewBox="0 0 24 24"
-              stroke="currentColor"
-              strokeWidth={2}
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M15 19l-7-7 7-7"
-              />
-            </svg>
+            <ChevronLeft className="w-4 h-4" />
             Retour
           </Link>
-          <div className="h-5 w-px bg-slate-700" />
-          <div className="flex items-center gap-3">
-            <div className="w-1 h-6 bg-teal-500 rounded-full" />
-            <h1 className="text-lg font-semibold text-white">
-              Paramètres du profil
-            </h1>
-          </div>
+          <h1 className="text-xl font-semibold text-slate-50">Mon Profil</h1>
         </div>
-      </div>
 
-      <div className="max-w-3xl mx-auto px-6 py-10 space-y-8">
-        {/* User summary card */}
-        <div className="bg-slate-900 rounded-xl border border-slate-800 p-6 flex items-center gap-5">
-          <div className="shrink-0 w-16 h-16 rounded-full bg-teal-600 flex items-center justify-center text-2xl font-bold text-white select-none">
+        {/* Profile card */}
+        <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-6 flex items-center gap-5">
+          <div className="shrink-0 w-20 h-20 rounded-full bg-cyan-600 flex items-center justify-center text-2xl font-bold text-white select-none ring-4 ring-cyan-500/20">
             {getInitials()}
           </div>
-          <div>
-            <p className="text-xl font-semibold text-white">
+          <div className="min-w-0">
+            <p className="text-xl font-semibold text-slate-50 truncate">
               {fullName || 'Utilisateur'}
             </p>
             {professionName && (
-              <p className="text-sm text-slate-400 mt-0.5">{professionName}</p>
+              <span className="inline-block mt-1.5 text-xs font-medium text-cyan-400 bg-cyan-500/10 border border-cyan-500/20 px-2.5 py-1 rounded-lg">
+                {professionName}
+              </span>
             )}
+            <p className="text-sm text-slate-400 mt-1.5 truncate">{email}</p>
           </div>
         </div>
 
         {/* Section 1 : Informations personnelles */}
-        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-800">
-            <div className="w-1 h-5 bg-teal-500 rounded-full" />
-            <h2 className="text-base font-semibold text-white">
+        <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-white/6">
+            <User className="w-4 h-4 text-cyan-400 shrink-0" />
+            <h2 className="text-base font-semibold text-slate-50">
               Informations personnelles
             </h2>
           </div>
           <form onSubmit={handleInfoSave} className="px-6 py-6 space-y-5">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-300">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-1.5 block">
                   Prénom
                 </label>
                 <input
@@ -185,8 +177,8 @@ export default function Profile() {
                   required
                 />
               </div>
-              <div className="space-y-1.5">
-                <label className="block text-sm font-medium text-slate-300">
+              <div>
+                <label className="text-sm font-medium text-slate-300 mb-1.5 block">
                   Nom
                 </label>
                 <input
@@ -199,8 +191,8 @@ export default function Profile() {
                 />
               </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">
+            <div>
+              <label className="text-sm font-medium text-slate-300 mb-1.5 block">
                 Email
               </label>
               <input
@@ -210,24 +202,31 @@ export default function Profile() {
                 className={`${inputClass} opacity-50 cursor-not-allowed`}
                 placeholder="Email"
               />
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-500 mt-1.5">
                 L'adresse email ne peut pas être modifiée.
               </p>
             </div>
 
             {infoSuccess && (
-              <p className="text-sm text-teal-400 font-medium">{infoSuccess}</p>
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/20 px-4 py-2.5 rounded-xl">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                {infoSuccess}
+              </div>
             )}
             {infoError && (
-              <p className="text-sm text-red-400 font-medium">{infoError}</p>
+              <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-2.5 rounded-xl">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {infoError}
+              </div>
             )}
 
             <div className="flex justify-end">
               <button
                 type="submit"
                 disabled={infoLoading}
-                className={`${saveButtonClass} disabled:opacity-60 disabled:cursor-not-allowed`}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                <Save className="w-4 h-4" />
                 {infoLoading ? 'Enregistrement...' : 'Enregistrer'}
               </button>
             </div>
@@ -235,45 +234,65 @@ export default function Profile() {
         </div>
 
         {/* Section 2 : Changer le mot de passe */}
-        <div className="bg-slate-900 rounded-xl border border-slate-800 overflow-hidden">
-          <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-800">
-            <div className="w-1 h-5 bg-teal-500 rounded-full" />
-            <h2 className="text-base font-semibold text-white">
+        <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl overflow-hidden">
+          <div className="flex items-center gap-3 px-6 py-4 border-b border-white/6">
+            <Lock className="w-4 h-4 text-cyan-400 shrink-0" />
+            <h2 className="text-base font-semibold text-slate-50">
               Changer le mot de passe
             </h2>
           </div>
           <form onSubmit={handlePasswordSave} className="px-6 py-6 space-y-5">
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">
+            <div>
+              <label className="text-sm font-medium text-slate-300 mb-1.5 block">
                 Mot de passe actuel
               </label>
-              <input
-                type="password"
-                value={currentPassword}
-                onChange={(e) => setCurrentPassword(e.target.value)}
-                className={inputClass}
-                placeholder="••••••••"
-                required
-                autoComplete="current-password"
-              />
+              <div className="relative">
+                <input
+                  type={showCurrentPw ? 'text' : 'password'}
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  className={`${inputClass} pr-11`}
+                  placeholder="••••••••"
+                  required
+                  autoComplete="current-password"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowCurrentPw((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer focus:outline-none"
+                  aria-label={showCurrentPw ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                >
+                  {showCurrentPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">
+            <div>
+              <label className="text-sm font-medium text-slate-300 mb-1.5 block">
                 Nouveau mot de passe
               </label>
-              <input
-                type="password"
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className={inputClass}
-                placeholder="••••••••"
-                required
-                autoComplete="new-password"
-                minLength={6}
-              />
+              <div className="relative">
+                <input
+                  type={showNewPw ? 'text' : 'password'}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className={`${inputClass} pr-11`}
+                  placeholder="••••••••"
+                  required
+                  autoComplete="new-password"
+                  minLength={6}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowNewPw((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors cursor-pointer focus:outline-none"
+                  aria-label={showNewPw ? 'Masquer le mot de passe' : 'Afficher le mot de passe'}
+                >
+                  {showNewPw ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                </button>
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <label className="block text-sm font-medium text-slate-300">
+            <div>
+              <label className="text-sm font-medium text-slate-300 mb-1.5 block">
                 Confirmer le nouveau mot de passe
               </label>
               <input
@@ -289,23 +308,31 @@ export default function Profile() {
             </div>
 
             {pwSuccess && (
-              <p className="text-sm text-teal-400 font-medium">{pwSuccess}</p>
+              <div className="flex items-center gap-2 text-sm text-green-400 bg-green-500/10 border border-green-500/20 px-4 py-2.5 rounded-xl">
+                <CheckCircle className="w-4 h-4 shrink-0" />
+                {pwSuccess}
+              </div>
             )}
             {pwError && (
-              <p className="text-sm text-red-400 font-medium">{pwError}</p>
+              <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 px-4 py-2.5 rounded-xl">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {pwError}
+              </div>
             )}
 
             <div className="flex justify-end">
               <button
                 type="submit"
                 disabled={pwLoading}
-                className={`${saveButtonClass} disabled:opacity-60 disabled:cursor-not-allowed`}
+                className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-60 disabled:cursor-not-allowed flex items-center gap-2"
               >
+                <Save className="w-4 h-4" />
                 {pwLoading ? 'Mise à jour...' : 'Mettre à jour'}
               </button>
             </div>
           </form>
         </div>
+
       </div>
     </div>
   );

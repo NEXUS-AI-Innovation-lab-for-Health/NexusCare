@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -21,7 +22,11 @@ async function bootstrap() {
     console.log('SSL certificates not found, running in HTTP mode');
   }
 
-  const app = await NestFactory.create(AppModule, { httpsOptions });
+  const uploadsDir = '/app/uploads';
+  if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+  const app = await NestFactory.create<NestExpressApplication>(AppModule, { httpsOptions });
+  app.useStaticAssets(uploadsDir, { prefix: '/uploads' });
   app.enableCors({
     origin: '*',
   });

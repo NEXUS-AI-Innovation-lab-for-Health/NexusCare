@@ -2,33 +2,35 @@ def build_prompt(form, text: str) -> str:
     fields_description = []
 
     for field in form.fields:
-        desc = f"- {field.name} ({field.label}"
-        if field.semantic_hint:
-            desc += f", {field.semantic_hint}"
-        desc += ")"
+        hint = field.semantic_hint if field.semantic_hint and field.semantic_hint != field.label else ""
+        desc = f'- "{field.name}" | type: {field.type} | label: {field.label}'
+        if hint:
+            desc += f' | indice: {hint}'
+
         fields_description.append(desc)
 
     fields_block = "\n".join(fields_description)
 
-    prompt = f"""
-Tu es un moteur d'extraction d'informations.
-Ta tâche est de remplir un formulaire à partir d'un texte.
+    prompt = f"""Tu es un moteur d'extraction d'informations médicales.
+Ta tâche : extraire les valeurs des champs d'un formulaire à partir d'une transcription vocale automatique.
+IMPORTANT : la transcription peut contenir des erreurs de reconnaissance vocale (mots déformés, approximatifs ou mal orthographiés). Utilise le contexte sémantique et la ressemblance phonétique pour associer les informations aux bons champs même si les mots ne sont pas exacts.
 
-Règles STRICTES :
-- Retourne UNIQUEMENT du JSON valide
-- Les clés doivent correspondre EXACTEMENT aux noms des champs
-- Si une information est absente ou incertaine, mets null
-- Toutes les valeurs doivent être des chaînes de caractères
-- Ne fais aucune supposition
-
-Formulaire :
+Champs à remplir :
 {fields_block}
 
-Texte :
+Transcription :
 \"\"\"{text}\"\"\"
 
-Retour attendu (JSON uniquement) :
-""".strip()
+Règles STRICTES :
+- Retourne UNIQUEMENT du JSON valide, aucun texte autour
+- Les clés JSON doivent être EXACTEMENT les noms des champs entre guillemets ci-dessus
+- Si une information est absente, mets null. En cas de doute sur l'association, préfère extraire la valeur plutôt que mettre null
+- Les champs de type "date" ou "datepicker" : format DD-MM-YYYY obligatoire
+- Les champs de type "number" : valeur numérique uniquement
+- Les champs de type "checkbox" : true ou false
+- Les autres champs : chaîne de caractères
+
+JSON :""".strip()
 
     return prompt
 

@@ -3,7 +3,7 @@ import { io, Socket } from 'socket.io-client';
 import { ClientToServerEvents, ServerToClientEvents } from '../types/socket';
 import { api } from '../src/services/api';
 import ReportGeneratorModal from './ReportGeneratorModal';
-import TranscriptionPanel from './TranscriptionPanel';
+import CollaborativeAnnotation from '../src/oncovision/components/CollaborativeAnnotation';
 
 type AppSocket = Socket<ServerToClientEvents, ClientToServerEvents>;
 
@@ -155,7 +155,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [currentMeeting, setCurrentMeeting] = useState<any>(null);
 
-  const [activeTab, setActiveTab] = useState<'info' | 'participants' | 'chat' | 'transcription'>('info');
+  const [activeTab, setActiveTab] = useState<'info' | 'participants' | 'chat'>('info');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<Record<string, any>>({});
   const [newFieldName, setNewFieldName] = useState('');
@@ -185,6 +185,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   const [showDeviceMenu, setShowDeviceMenu] = useState<'video' | 'audio' | 'speaker' | null>(null);
   const [showActionsMenu, setShowActionsMenu] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showCollaboration, setShowCollaboration] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState('');
   const [autofillStatus, setAutofillStatus] = useState('');
 
@@ -796,7 +797,7 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
   };
 
   return (
-    <div className="flex flex-col h-screen bg-slate-950 text-slate-100">
+    <div className="relative flex flex-col h-screen bg-slate-950 text-slate-100">
       {isEditModalOpen && (
         <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
@@ -1239,6 +1240,19 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
                 )}
               </div>
 
+              {currentMeeting?.collaborationId && (
+                <button
+                  onClick={() => setShowCollaboration(prev => !prev)}
+                  className={`p-4 rounded-full transition-all flex items-center justify-center shadow-lg transform hover:scale-105 ${showCollaboration ? 'bg-teal-600 hover:bg-teal-700 ring-2 ring-teal-400' : 'bg-slate-600 hover:bg-slate-500'}`}
+                  title="Collaboration en direct"
+                >
+                  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                  </svg>
+                </button>
+              )}
+
               <button
                 onClick={onLeave}
                 className="p-4 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-lg transform hover:scale-105"
@@ -1418,10 +1432,6 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
             </div>
           </div>
 
-          <div className={`${activeTab === 'transcription' ? 'absolute inset-0 z-40 bg-slate-950 w-full flex' : 'hidden'} lg:flex lg:static lg:w-80 bg-slate-900/50 backdrop-blur-sm border-l border-slate-800 flex-col`}>
-            <TranscriptionPanel onTranscriptChange={setLiveTranscript} />
-          </div>
-
           <div className="lg:hidden absolute bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 flex justify-around p-2 z-50 md:justify-end md:gap-4 md:px-6">
             <button
               onClick={() => setActiveTab('participants')}
@@ -1444,13 +1454,27 @@ const VideoCall: React.FC<VideoCallProps> = ({ onLeave, initialMicOn = true, ini
               <span className="text-xl">💬</span>
               <span className="text-[10px]">Chat</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Collaborative Annotation Overlay */}
+      {showCollaboration && currentMeeting?.collaborationId && (
+        <div className="absolute inset-0 z-50 bg-slate-950 flex flex-col">
+          <div className="flex items-center justify-between px-4 py-2 bg-slate-900 border-b border-slate-700 shrink-0">
+            <span className="text-white font-semibold text-sm">Annotation collaborative</span>
             <button
-              onClick={() => setActiveTab('transcription')}
-              className={`p-2 rounded-lg flex flex-col items-center ${activeTab === 'transcription' ? 'text-teal-400' : 'text-slate-400'}`}
+              onClick={() => setShowCollaboration(false)}
+              className="p-1.5 rounded-lg hover:bg-slate-700 text-slate-400 hover:text-white transition-colors"
+              title="Fermer"
             >
-              <span className="text-xl">🎙️</span>
-              <span className="text-[10px]">Transcription</span>
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            <CollaborativeAnnotation roomId={currentMeeting.collaborationId} meetingId={currentMeeting.id} />
           </div>
         </div>
       )}

@@ -1,0 +1,29 @@
+services:
+
+  pathocollab:
+    image: ultimatedpv4/pathocollab-backend-gateway:latest
+
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      CASES_SERVICE_URL: http://cases-service:8002
+      WORKFLOW_SERVICE_URL: http://workflow-service:8003
+      IMAGES_SERVICE_URL: http://images-service:8004
+      REPORTS_SERVICE_URL: http://reports-service:8005
+
+    ports:
+      - "8000:8000"
+
+  auth-service:
+    image: ultimatedpv4/pathocollab-auth-service:latest
+
+  cases-service:
+    image: ultimatedpv4/pathocollab-cases-service:latest
+
+  workflow-service:
+    image: ultimatedpv4/pathocollab-workflow-service:latest
+
+  images-service:
+    image: ultimatedpv4/pathocollab-images-service:latest
+
+  reports-service:
+    image: ultimatedpv4/pathocollab-reports-service:latest

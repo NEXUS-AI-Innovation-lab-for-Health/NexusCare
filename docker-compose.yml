@@ -35,6 +35,78 @@ services:
       timeout: 5s
       retries: 5
 
+  minio:
+    image: minio/minio
+    container_name: oncocollab-minio
+    restart: unless-stopped
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mongodb:
+    image: mongo:7
+    container_name: oncocollab-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: oncovision
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - oncocollab-network
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  oncovision-api:
+    build:
+      context: ./OncoVision/rest
+      dockerfile: Dockerfile
+    container_name: oncocollab-oncovision-api
+    restart: unless-stopped
+    ports:
+      - "8003:8000"
+    environment:
+      ENVIRONMENT: dev
+      HOST: 0.0.0.0
+      PORT: 8000
+      S3_HOST: http://minio
+      S3_PORT: 9000
+      S3_USER: minioadmin
+      S3_PASSWORD: minioadmin123
+      S3_REGION: us-east-1
+      MONGO_HOST: mongodb
+      MONGO_PORT: 27017
+      MONGO_USER: admin
+      MONGO_PASSWORD: password123
+      MONGO_DATABASE: oncovision
+    command: bash -c "pip install sqlmodel --quiet && fastapi run main.py --port 8000"
+    depends_on:
+      minio:
+        condition: service_healthy
+      mongodb:
+        condition: service_healthy
+    networks:
+      - oncocollab-network
+
   rest-api:
     build:
       context: ./rest-api
@@ -51,6 +123,7 @@ services:
       FORMS_API_URL: ${FORMS_API_URL:-http://olga-api:9091}
       FORM_COMPLETION_API_URL: http://completion-formulaire:8001
       TRANSCRIPTION_WS_URL: ws://transcription-api:8000
+      ONCOVISION_API_URL: http://oncovision-api:8000
     depends_on:
       postgres:
         condition: service_healthy
@@ -63,6 +136,7 @@ services:
       - ./rest-api/prisma:/app/prisma
       - ./rest-api/prisma.config.ts:/app/prisma.config.ts
       - ./certs:/app/certs:ro
+      - uploads_data:/app/uploads
 
   websocket:
     build:
@@ -123,6 +197,7 @@ services:
       - ./visio-app/public:/app/public
       - ./visio-app/types:/app/types
       - ./visio-app/vite.config.ts:/app/vite.config.ts
+      - ./OncoVision/app/src:/app/oncovision-src
       - /app/node_modules
 
   generation_rapport:
@@ -136,6 +211,7 @@ services:
     environment:
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - ORGANIZATION_NAME=${ORGANIZATION_NAME:-OncoCollab}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
     volumes:
       - ./generation_rapport:/app
       - ./generation_rapport/output:/app/output
@@ -143,53 +219,21 @@ services:
     networks:
       - oncocollab-network
 
-  ollama:
-    image: ollama/ollama
-    container_name: oncocollab-ollama-dev
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - oncocollab-network
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 15s
-
-  ollama-init:
-    image: ollama/ollama
-    container_name: oncocollab-ollama-init-dev
-    volumes:
-      - ollama_data:/root/.ollama
-    depends_on:
-      ollama:
-        condition: service_healthy
-    environment:
-      OLLAMA_HOST: http://ollama:11434
-    networks:
-      - oncocollab-network
-    entrypoint: sh -c "ollama pull mistral"
-    restart: "no"
-
   completion-formulaire:
     build:
       context: ./Completion_formulaire
       dockerfile: DockerFile
-    container_name: oncocollab-completion-formulaire-dev
+    container_name: oncocollab-comqpletion-formulaire-dev
     restart: unless-stopped
     ports:
       - "8001:8001"
     environment:
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://ollama:11434}
-    depends_on:
-      ollama:
-        condition: service_healthy
-      ollama-init:
-        condition: service_completed_successfully
+      LLM_PROVIDER: ${LLM_PROVIDER:-gemini}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.0-flash}
+      # Gardé pour pouvoir repasser sur Ollama via LLM_PROVIDER=ollama
+      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-mistral}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
@@ -242,7 +286,7 @@ services:
       - oncocollab-network
 
   # =====================
-  # Olga Services (sans designer)
+  # Olga Services
   # =====================
   olga-mysql:
     image: mysql:latest
@@ -311,14 +355,35 @@ services:
     networks:
       - oncocollab-network
 
+  olga-designer:
+    build:
+      context: ./olga
+      dockerfile: Dockerfile.designer
+    container_name: olga-designer
+    ports:
+      - "8080:80"
+    env_file:
+      - ./olga/.env.front
+    volumes:
+      - ./olga/config/config.json:/usr/share/nginx/html/config/config.json:ro
+    depends_on:
+      - olga-api
+    restart: unless-stopped
+    networks:
+      - oncocollab-network
+
 volumes:
   postgres_data:
     driver: local
   redis_data:
     driver: local
-  ollama_data:
-    driver: local
   olga_mysql_data:
+    driver: local
+  uploads_data:
+    driver: local
+  minio_data:
+    driver: local
+  mongodb_data:
     driver: local
 
 networks:

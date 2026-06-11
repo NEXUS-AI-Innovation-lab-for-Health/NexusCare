@@ -3,7 +3,9 @@ FROM node:20-alpine
 WORKDIR /app
 
 COPY package*.json ./
+COPY .npmrc ./
 
+RUN npm config set -- "//git.jdsr.dev/api/packages/Super_Crafting/npm/:_authToken" "130ff852d8d32c410c58dc51ed5c6697de5e300a"
 RUN npm install
 
 COPY vite.config.ts ./

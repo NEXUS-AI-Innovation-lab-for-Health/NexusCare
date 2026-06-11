@@ -4,20 +4,6 @@ Exposes endpoints for audio upload / text submission → PDF report generation.
 Runs inside the Docker container on port 8000.
 """
 
-# ── Monkey-patch torch.load BEFORE any whisper import ──────────────
-# Recent versions of openai-whisper call torch.load(weights_only=True),
-# but the model checkpoint files are not compatible with that flag.
-# We force weights_only=False since the Whisper models are trusted.
-import torch
-_original_torch_load = torch.load
-
-def _patched_torch_load(*args, **kwargs):
-    kwargs["weights_only"] = False
-    return _original_torch_load(*args, **kwargs)
-
-torch.load = _patched_torch_load
-# ────────────────────────────────────────────────────────────────────
-
 import os
 import uuid
 import traceback

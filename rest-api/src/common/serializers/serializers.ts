@@ -90,6 +90,7 @@ export function serializeMeeting(m: any) {
     startedAt: m.startedAt,
     duration: m.duration,
     groupChatId: m.groupChatId ?? null,
+    collaborationId: m.collaborationId ?? null,
     createdAt: m.createdAt,
     updatedAt: m.updatedAt,
   };

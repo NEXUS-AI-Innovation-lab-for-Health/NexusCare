@@ -1,199 +1,222 @@
 """
 SPEECH-TO-TEXT MODULE - Cedric's Meeting Report Generator
-Uses OpenAI Whisper for audio transcription
-
-Features:
-- Converts audio files (WebM, MP3, WAV, etc.) to compatible formats
-- Transcribes audio using OpenAI Whisper
-- Multiple model sizes for accuracy/speed tradeoff
-- Returns transcribed text with high accuracy
+Uses Groq API (whisper-large-v3) for audio transcription — no local model, no RAM overhead.
 
 Requirements:
-    pip install openai-whisper
-    
-    Also install FFmpeg (required by Whisper):
+    pip install groq
+
+    Set environment variable:
+        GROQ_API_KEY=<your key>   (https://console.groq.com → API Keys)
+
+    FFmpeg is still required to convert audio formats before sending to Groq:
     - Windows: https://ffmpeg.org/download.html
-    - Linux: sudo apt install ffmpeg
-    - Mac: brew install ffmpeg
+    - Linux:   sudo apt install ffmpeg
+    - Mac:     brew install ffmpeg
 """
 
-import whisper
 import os
-from datetime import datetime
+import tempfile
+import subprocess
+from pathlib import Path
+
+
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY", "")
+
+# Supported audio formats accepted directly by the Groq API
+_GROQ_NATIVE = {".mp3", ".mp4", ".mpeg", ".mpga", ".m4a", ".wav", ".webm", ".ogg", ".flac"}
+
+# Medical vocabulary prompt to guide the model for French oncology meetings
+MEDICAL_PROMPT = (
+    "Réunion de concertation pluridisciplinaire en oncologie. "
+    "Tumeur, tumeurs, métastase, métastases, chimiothérapie, radiothérapie, "
+    "immunothérapie, biopsie, histologie, carcinome, adénocarcinome, "
+    "sarcome, lymphome, mélanome, ganglion, ganglions lymphatiques, "
+    "stadification, TNM, IRM, scanner, TEP-scan, PET-scan, "
+    "hémoglobine, leucocytes, plaquettes, marqueurs tumoraux, PSA, CA 125, "
+    "ACE, AFP, chirurgie, résection, exérèse, curage, protocole, "
+    "patient, patiente, dossier médical, compte-rendu, anatomopathologie, "
+    "pronostic, diagnostic, rémission, récidive, palliatif, curatif, "
+    "concertation pluridisciplinaire, oncologue, chirurgien, radiologue, "
+    "pathologiste, infirmier, infirmière."
+)
+
+
+def _ensure_compatible_format(audio_path: Path) -> tuple[Path, bool]:
+    """
+    If the file format is not natively supported by Groq, convert it to mp3 via ffmpeg.
+    Returns (path_to_use, was_temp) — caller must delete the temp file if was_temp is True.
+    """
+    if audio_path.suffix.lower() in _GROQ_NATIVE:
+        return audio_path, False
+
+    tmp = tempfile.NamedTemporaryFile(suffix=".mp3", delete=False)
+    tmp.close()
+    tmp_path = Path(tmp.name)
+
+    result = subprocess.run(
+        ["ffmpeg", "-y", "-i", str(audio_path), str(tmp_path)],
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        tmp_path.unlink(missing_ok=True)
+        raise RuntimeError(f"ffmpeg conversion failed: {result.stderr.decode()}")
+
+    return tmp_path, True
 
 
 class MeetingTranscriber:
     """
-    Transcribe meeting audio files to text using OpenAI Whisper
+    Transcribe meeting audio using the Groq API (whisper-large-v3).
+    Identical interface to the previous Whisper-local version so existing
+    callers (cedric_complete_integration, api_server) work without changes.
     """
-    
-    def __init__(self, model_size="base", device="auto"):
-        """
-        Initialize the transcriber with Whisper model
-        
-        Args:
-            model_size: Whisper model size ('tiny', 'base', 'small', 'medium', 'large')
-                       - tiny: Fastest, ~1GB VRAM, good for quick testing
-                       - base: Good balance, ~1GB VRAM (recommended)
-                       - small: Better accuracy, ~2GB VRAM
-                       - medium: High accuracy, ~5GB VRAM
-                       - large: Best accuracy, ~10GB VRAM (GPU recommended)
-            device: Device to run on ('auto', 'cuda', 'cpu')
-        """
-        self.model_size = model_size
-        # Resolve "auto" to an actual device string torch understands
-        if device == "auto":
-            import torch
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        else:
-            self.device = device
-        self.model = None
-        print(f"✓ Meeting Transcriber initialized with Whisper model: {model_size}")
-    
-    def _load_model(self):
-        """
-        Load Whisper model (lazy loading)
-        """
-        if self.model is None:
-            print(f"🎤 Loading Whisper model ({self.model_size}) on {self.device}...")
-            self.model = whisper.load_model(self.model_size, device=self.device)
-            print("✓ Whisper model loaded successfully")
-        return self.model
-    
-    # Medical vocabulary prompt to guide Whisper for French oncology meetings
-    MEDICAL_PROMPT = (
-        "Réunion de concertation pluridisciplinaire en oncologie. "
-        "Tumeur, tumeurs, métastase, métastases, chimiothérapie, radiothérapie, "
-        "immunothérapie, biopsie, histologie, carcinome, adénocarcinome, "
-        "sarcome, lymphome, mélanome, ganglion, ganglions lymphatiques, "
-        "stadification, TNM, IRM, scanner, TEP-scan, PET-scan, "
-        "hémoglobine, leucocytes, plaquettes, marqueurs tumoraux, PSA, CA 125, "
-        "ACE, AFP, chirurgie, résection, exérèse, curage, protocole, "
-        "patient, patiente, dossier médical, compte-rendu, anatomopathologie, "
-        "pronostic, diagnostic, rémission, récidive, palliatif, curatif, "
-        "concertation pluridisciplinaire, oncologue, chirurgien, radiologue, "
-        "pathologiste, infirmier, infirmière."
-    )
 
-    def transcribe_audio_file(self, audio_file_path, language=None, task="transcribe", initial_prompt=None):
+    def __init__(self, model_size=None, device=None):  # noqa: ARG002
         """
-        Transcribe audio file to text using OpenAI Whisper
-        
         Args:
-            audio_file_path: Path to audio file (supports all formats: MP3, WAV, M4A, WebM, etc.)
-            language: Optional language code (e.g., 'en', 'es', 'fr'). Auto-detected if None.
-            task: Either 'transcribe' or 'translate' (translate to English)
-            initial_prompt: Optional text prompt to condition the model (improves domain-specific accuracy)
-        
+            model_size: ignored (kept for backwards compatibility)
+            device:     ignored (kept for backwards compatibility)
+        """
+        _ = model_size, device
+        if not GROQ_API_KEY:
+            raise RuntimeError(
+                "GROQ_API_KEY environment variable is not set. "
+                "Get a free key at https://console.groq.com"
+            )
+        print("✓ Meeting Transcriber initialized (Groq API — whisper-large-v3)")
+
+    # ------------------------------------------------------------------
+    def transcribe_audio_file(self, audio_file_path, language=None, task="transcribe", initial_prompt=None):  # noqa: ARG002
+        """
+        Transcribe audio file to text using Groq API.
+
+        Args:
+            audio_file_path: Path to audio file (MP3, WAV, M4A, WebM, OGG, …)
+            language:        Optional language code (e.g. 'fr', 'en'). Auto-detected if None.
+            task:            'transcribe' or 'translate' (translate → English).
+                             Note: Groq does not support translate natively; the text is
+                             returned as-is when task='translate'.
+            initial_prompt:  Optional prompt to improve domain accuracy.
+
         Returns:
             dict: {
-                'success': bool,
+                'success':      bool,
                 'transcription': str,
-                'language': str,
-                'error': str (if applicable)
+                'language':     str,
+                'error':        str   (only when success is False)
             }
         """
+        audio_path = Path(audio_file_path)
+        if not audio_path.exists():
+            return {"success": False, "error": f"Audio file not found: {audio_file_path}"}
+
+        tmp_path = None
         try:
-            # Check if file exists
-            if not os.path.exists(audio_file_path):
-                return {
-                    'success': False,
-                    'error': f'Audio file not found: {audio_file_path}'
-                }
-            
-            # Load model
-            model = self._load_model()
-            
-            # Transcribe using Whisper
-            print(f"🎤 Transcribing audio with Whisper ({self.model_size})...")
-            
-            # Transcribe options
-            transcribe_options = {'task': task}
+            from groq import Groq
+
+            upload_path, is_tmp = _ensure_compatible_format(audio_path)
+            if is_tmp:
+                tmp_path = upload_path
+
+            print(f"🎤 Transcribing audio with Groq (whisper-large-v3)…")
+            client = Groq(api_key=GROQ_API_KEY)
+
+            kwargs = dict(
+                model="whisper-large-v3",
+                response_format="verbose_json",
+                prompt=initial_prompt or MEDICAL_PROMPT,
+            )
             if language:
-                transcribe_options['language'] = language
-            # Use medical prompt by default if none provided
-            transcribe_options['initial_prompt'] = initial_prompt or self.MEDICAL_PROMPT
-            
-            result = model.transcribe(audio_file_path, **transcribe_options)
-            
-            transcription = result['text'].strip()
-            detected_language = result.get('language', 'unknown')
-            
-            print(f"✓ Transcription complete: {len(transcription)} characters")
-            print(f"  Detected language: {detected_language}")
-            
+                kwargs["language"] = language
+
+            with open(upload_path, "rb") as f:
+                response = client.audio.transcriptions.create(
+                    file=(upload_path.name, f.read()),
+                    **kwargs,
+                )
+
+            transcription = (response.text or "").strip()
+            detected_lang = getattr(response, "language", language or "unknown")
+
+            print(f"✓ Transcription complete: {len(transcription)} characters — langue: {detected_lang}")
+
             return {
-                'success': True,
-                'transcription': transcription,
-                'language': detected_language,
-                'full_result': result  # Includes segments, timestamps, etc.
+                "success": True,
+                "transcription": transcription,
+                "language": detected_lang,
             }
-        
+
         except Exception as e:
-            print(f"✗ Whisper transcription error: {e}")
-            return {
-                'success': False,
-                'error': f'Whisper transcription error: {str(e)}'
-            }
-    
+            print(f"✗ Groq transcription error: {e}")
+            return {"success": False, "error": f"Groq transcription error: {str(e)}"}
+
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+
+    # ------------------------------------------------------------------
     def transcribe_with_timestamps(self, audio_file_path, language=None):
         """
-        Transcribe audio and return detailed segments with timestamps
-        
-        Args:
-            audio_file_path: Path to audio file
-            language: Optional language code
-        
+        Transcribe audio and return segments with timestamps.
+
         Returns:
             dict: {
-                'success': bool,
+                'success':      bool,
                 'transcription': str,
-                'segments': list of dict with timestamps,
-                'error': str (if applicable)
+                'segments':     list[dict],  # {start, end, text}
+                'language':     str,
+                'error':        str   (only when success is False)
             }
         """
+        audio_path = Path(audio_file_path)
+        if not audio_path.exists():
+            return {"success": False, "error": f"Audio file not found: {audio_file_path}"}
+
+        tmp_path = None
         try:
-            # Check if file exists
-            if not os.path.exists(audio_file_path):
-                return {
-                    'success': False,
-                    'error': f'Audio file not found: {audio_file_path}'
-                }
-            
-            # Load model
-            model = self._load_model()
-            
-            print(f"🎤 Transcribing with timestamps...")
-            
-            transcribe_options = {}
+            from groq import Groq
+
+            upload_path, is_tmp = _ensure_compatible_format(audio_path)
+            if is_tmp:
+                tmp_path = upload_path
+
+            print("🎤 Transcribing with timestamps (Groq)…")
+            client = Groq(api_key=GROQ_API_KEY)
+
+            kwargs = dict(
+                model="whisper-large-v3",
+                response_format="verbose_json",
+                prompt=MEDICAL_PROMPT,
+            )
             if language:
-                transcribe_options['language'] = language
-            
-            result = model.transcribe(audio_file_path, **transcribe_options)
-            
-            # Format segments with timestamps
-            segments = []
-            for seg in result['segments']:
-                segments.append({
-                    'start': seg['start'],
-                    'end': seg['end'],
-                    'text': seg['text'].strip()
-                })
-            
+                kwargs["language"] = language
+
+            with open(upload_path, "rb") as f:
+                response = client.audio.transcriptions.create(
+                    file=(upload_path.name, f.read()),
+                    **kwargs,
+                )
+
+            segments = [
+                {"start": seg.start, "end": seg.end, "text": seg.text.strip()}
+                for seg in (response.segments or [])
+            ]
+
             print(f"✓ Transcription complete: {len(segments)} segments")
-            
+
             return {
-                'success': True,
-                'transcription': result['text'].strip(),
-                'segments': segments,
-                'language': result.get('language', 'unknown')
+                "success": True,
+                "transcription": (response.text or "").strip(),
+                "segments": segments,
+                "language": getattr(response, "language", language or "unknown"),
             }
-        
+
         except Exception as e:
-            return {
-                'success': False,
-                'error': f'Timestamp transcription error: {str(e)}'
-            }
+            return {"success": False, "error": f"Timestamp transcription error: {str(e)}"}
+
+        finally:
+            if tmp_path and tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
 
 
 # ===========================
@@ -201,53 +224,19 @@ class MeetingTranscriber:
 # ===========================
 
 if __name__ == "__main__":
-    # Initialize transcriber with Whisper model
-    # Model options: 'tiny', 'base', 'small', 'medium', 'large'
-    transcriber = MeetingTranscriber(model_size="base")
-    
-    # Example 1: Basic transcription
-    audio_file = "meeting_recording.wav"  # Can also be MP3, M4A, WebM, etc.
-    
+    transcriber = MeetingTranscriber()
+
+    audio_file = "meeting_recording.wav"
+
     if os.path.exists(audio_file):
         result = transcriber.transcribe_audio_file(audio_file)
-        
-        if result['success']:
-            print("\n" + "="*60)
+        if result["success"]:
+            print("\n" + "=" * 60)
             print("TRANSCRIPTION RESULT:")
-            print("="*60)
-            print(result['transcription'])
+            print("=" * 60)
+            print(result["transcription"])
             print(f"\nDetected Language: {result['language']}")
         else:
             print(f"\n✗ Error: {result['error']}")
     else:
-        print(f"Example audio file not found: {audio_file}")
-        print("\nCreating a demo with sample text...")
-        
-    # Example 2: Transcription with timestamps (useful for long meetings)
-    """
-    result = transcriber.transcribe_with_timestamps(audio_file)
-    if result['success']:
-        print("\n" + "="*60)
-        print("TRANSCRIPTION WITH TIMESTAMPS:")
-        print("="*60)
-        for segment in result['segments']:
-            start_time = segment['start']
-            end_time = segment['end']
-            text = segment['text']
-            print(f"[{start_time:.2f}s - {end_time:.2f}s] {text}")
-    """
-    
-    # Example 3: Transcribe MP3 file (Whisper handles all formats automatically)
-    """
-    mp3_file = "meeting_recording.mp3"
-    result = transcriber.transcribe_audio_file(mp3_file)
-    if result['success']:
-        print(result['transcription'])
-    """
-    
-    # Example 4: Transcribe and translate to English
-    """
-    result = transcriber.transcribe_audio_file(audio_file, task="translate")
-    if result['success']:
-        print("Translation to English:", result['transcription'])
-    """
+        print(f"Audio file not found: {audio_file}")

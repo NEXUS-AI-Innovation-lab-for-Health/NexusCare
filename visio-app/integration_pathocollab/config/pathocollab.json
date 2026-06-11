@@ -1,0 +1,26 @@
+{
+  "appName": "PathoCollab",
+  "mode": "external-service",
+  "gatewayUrl": "http://localhost:8000",
+  "publicBaseUrl": "http://localhost:8000",
+  "auth": {
+    "enabled": true,
+    "type": "jwt",
+    "loginEndpoint": "/api/auth/login",
+    "registerEndpoint": "/api/auth/register"
+  },
+  "features": {
+    "cases": true,
+    "workflow": true,
+    "images": true,
+    "annotations": true,
+    "reports": true,
+    "aiSegmentation": true,
+    "semanticSearch": true
+  },
+  "storage": {
+    "images": "minio",
+    "database": "postgresql",
+    "vectorDatabase": "qdrant"
+  }
+}

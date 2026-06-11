@@ -1,7 +1,26 @@
 import React from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../services/api';
+import CollaborativeAnnotation from '../oncovision/components/CollaborativeAnnotation';
 import { useTranscription } from '../hooks/useTranscription';
+import {
+    Calendar,
+    Users,
+    Video,
+    Plus,
+    X,
+    ChevronLeft,
+    Mic,
+    MicOff,
+    FileText,
+    AlertTriangle,
+    CheckCircle,
+    Clock,
+    User,
+    Edit2,
+    Save,
+    RefreshCw,
+} from 'lucide-react';
 
 interface Meeting {
     id: string;
@@ -11,6 +30,7 @@ interface Meeting {
     time: string;
     patientFirstName?: string;
     patientLastName?: string;
+    collaborationId?: string;
     participants: {
         user: any;
         profession: any;
@@ -31,7 +51,7 @@ interface FormFieldSchema {
     unique_id: string;
     field_key?: string;
     // 'dicom' s'affiche comme un champ texte mais le type est conservé pour que le backend puisse le traiter comme du DICOM
-    field_type: 'datepicker' | 'text' | 'input:text' | 'input:number' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom' | 'notice';
+    field_type: 'datepicker' | 'text' | 'input:text' | 'input:number' | 'number' | 'textarea' | 'select' | 'checkbox' | 'dicom' | 'notice' | 'file';
     field_mode?: 'edit' | 'view';
     field_label: string;
     field_hint?: string;
@@ -109,6 +129,7 @@ const Meetings: React.FC = () => {
     const [liveTranscript, setLiveTranscript] = React.useState('');
     const [autofillStatus, setAutofillStatus] = React.useState('');
     const [autofilledKeys, setAutofilledKeys] = React.useState<string[]>([]);
+    const [oncovisionOpen, setOncovisionOpen] = React.useState(false);
 
     const autoFillTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
     const autoFillInFlightRef = React.useRef(false);
@@ -273,8 +294,8 @@ const Meetings: React.FC = () => {
         const fieldKey = field.field_key ?? '';
         const value = editForm[fieldKey] ?? '';
         const isReadOnly = field.field_mode === 'view';
-        const baseClass = 'w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors';
-        const readOnlyClass = 'w-full bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-2.5 text-slate-400 cursor-not-allowed';
+        const baseClass = 'bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition-all duration-200 w-full';
+        const readOnlyClass = 'bg-white/3 border border-white/6 rounded-xl px-4 py-2.5 text-slate-500 cursor-not-allowed w-full';
         const onChange = (val: any) => setEditForm((prev: Record<string, any>) => ({ ...prev, [fieldKey]: val }));
 
         switch (field.field_type) {
@@ -288,7 +309,13 @@ const Meetings: React.FC = () => {
             case 'checkbox':
                 return (
                     <div className="flex items-center h-10">
-                        <input type="checkbox" checked={!!value} onChange={e => onChange(e.target.checked)} disabled={isReadOnly} className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500" />
+                        <input
+                            type="checkbox"
+                            checked={!!value}
+                            onChange={e => onChange(e.target.checked)}
+                            disabled={isReadOnly}
+                            className="w-4 h-4 rounded accent-cyan-500 cursor-pointer"
+                        />
                     </div>
                 );
             case 'select':
@@ -307,14 +334,53 @@ const Meetings: React.FC = () => {
                 );
             case 'notice':
                 return (
-                    <div className="flex items-start gap-2 bg-teal-900/30 border border-teal-700/50 rounded-lg px-4 py-3 text-teal-300 text-sm">
-                        <span className="mt-0.5">ℹ️</span>
+                    <div className="flex items-start gap-2.5 bg-cyan-500/10 border border-cyan-500/20 rounded-xl px-4 py-3 text-cyan-300 text-sm">
+                        <FileText className="w-4 h-4 mt-0.5 shrink-0" />
                         <span>{field.field_label}</span>
                     </div>
                 );
-            case 'dicom':
-                // Champ texte côté UI mais le type 'dicom' reste dans le payload pour le traitement backend
-                return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} placeholder="Identifiant DICOM" className={isReadOnly ? readOnlyClass : baseClass} />;
+            case 'file':
+            case 'dicom': {
+                const accept = field.field_type === 'dicom' ? '.dcm,application/dicom' : undefined;
+                if (isReadOnly) {
+                    if (field.field_type === 'dicom' && selectedMeeting?.collaborationId) {
+                        return (
+                            <div className="flex items-center gap-3">
+                                {value && <a href={api.getFileUrl(value)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline text-sm truncate max-w-40">{value.split('/').pop()}</a>}
+                                <button
+                                    onClick={() => setOncovisionOpen(true)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white transition-all duration-200 cursor-pointer shrink-0"
+                                >
+                                    Annotation collaborative
+                                </button>
+                            </div>
+                        );
+                    }
+                    return value
+                        ? <a href={api.getFileUrl(value)} target="_blank" rel="noopener noreferrer" className="text-cyan-400 underline text-sm">{value.split('/').pop()}</a>
+                        : <div className={readOnlyClass}>—</div>;
+                }
+                return (
+                    <div className="flex flex-col gap-1.5">
+                        <input
+                            type="file"
+                            accept={accept}
+                            onChange={e => {
+                                const f = e.target.files?.[0];
+                                if (!f) return;
+                                api.uploadPatientFile(f).then(({ url }) => onChange(url)).catch(() => alert('Erreur upload'));
+                                if (field.field_type === 'dicom' && selectedMeeting?.collaborationId) {
+                                    api.uploadDicomToMeeting(selectedMeeting.id, f).catch(err =>
+                                        console.error('[DICOM] OncoVision upload failed:', err)
+                                    );
+                                }
+                            }}
+                            className="block w-full text-slate-100 text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:bg-cyan-500/20 file:text-cyan-300 hover:file:bg-cyan-500/30 cursor-pointer"
+                        />
+                        {value && <span className="text-xs text-cyan-400">{value.split('/').pop()}</span>}
+                    </div>
+                );
+            }
             default:
                 return <input type="text" value={value} onChange={e => onChange(e.target.value)} readOnly={isReadOnly} className={isReadOnly ? readOnlyClass : baseClass} />;
         }
@@ -336,6 +402,16 @@ const Meetings: React.FC = () => {
             return Number.isFinite(parsed) ? parsed : null;
         }
 
+        if (fieldType === 'date' || fieldType === 'datepicker') {
+            const s = String(rawValue).trim();
+            // DD-MM-YYYY ou DD/MM/YYYY → YYYY-MM-DD
+            const m = s.match(/^(\d{2})[-/](\d{2})[-/](\d{4})$/);
+            if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+            // Déjà YYYY-MM-DD
+            if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+            return null;
+        }
+
         return String(rawValue).trim();
     }, []);
 
@@ -354,11 +430,16 @@ const Meetings: React.FC = () => {
 
         if (!fieldsForCompletion.length) return;
 
+        console.log('[AutoFill] champs envoyés:', fieldsForCompletion);
+        console.log('[AutoFill] transcription:', transcriptText.slice(0, 200));
+
         const result = (await api.extractFormFromTranscript({
             form: { fields: fieldsForCompletion },
             text: transcriptText,
         })) as CompletionResponse;
         const extracted = result.data || {};
+
+        console.log('[AutoFill] réponse LLM:', extracted);
 
         let appliedCount = 0;
         const changedKeys: string[] = [];
@@ -372,6 +453,7 @@ const Meetings: React.FC = () => {
             for (const field of fieldsForCompletion) {
                 const rawValue = extracted[field.name];
                 const normalized = normalizeCompletionValue(field.type, rawValue);
+                console.log(`[AutoFill] champ="${field.name}" type="${field.type}" raw=${JSON.stringify(rawValue)} normalized=${JSON.stringify(normalized)}`);
                 if (normalized === null || normalized === undefined || normalized === '') continue;
 
                 const currentValue = next[field.name];
@@ -397,6 +479,7 @@ const Meetings: React.FC = () => {
 
     React.useEffect(() => {
         if (modalType !== 'patient' || !isModalOpen) return;
+        if (wsStatus === 'disconnected' || wsStatus === 'error') return;
         const transcriptText = liveTranscript.trim();
         if (!transcriptText || !formSchema) return;
         if (transcriptText.length < MIN_TRANSCRIPT_LENGTH_FOR_AUTOFILL) return;
@@ -424,7 +507,7 @@ const Meetings: React.FC = () => {
         return () => {
             if (autoFillTimerRef.current) clearTimeout(autoFillTimerRef.current);
         };
-    }, [liveTranscript, formSchema, modalType, isModalOpen, runAutoCompletion]);
+    }, [liveTranscript, formSchema, modalType, isModalOpen, runAutoCompletion, wsStatus]);
 
     const handleSaveForm = async () => {
         if (!selectedMeeting || !user?.id) return;
@@ -534,118 +617,144 @@ const Meetings: React.FC = () => {
         await startRecording();
     };
 
+    // ─── shared input classes ───────────────────────────────────────────────
+    const inputClass = 'bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 focus:border-cyan-500/40 transition-all duration-200 w-full';
+    const labelClass = 'text-sm font-medium text-slate-300 mb-1.5 block';
+
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 px-4 py-6 md:p-8 font-sans">
+        <div className="min-h-screen bg-[#080D1A] text-slate-100 font-sans">
+
+            {/* ══════════════════════════════════════════════════════
+                MODAL 1 & 2 — Patient Form (patient) / Meeting Details (details)
+            ══════════════════════════════════════════════════════ */}
             {isModalOpen && selectedMeeting && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-                    <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="relative w-full max-w-2xl backdrop-blur-2xl bg-[#0D1526] border border-white/10 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-white/8">
+                            <h2 className="text-lg font-semibold text-slate-50 flex items-center gap-2.5">
                                 {modalType === 'patient' ? (
                                     <>
-                                        <span>📋</span> {isCurrentUserFormFilled(selectedMeeting) ? 'Dossier Patient' : 'Créer Dossier Patient'}
+                                        <FileText className="w-5 h-5 text-cyan-400" />
+                                        {isCurrentUserFormFilled(selectedMeeting) ? 'Dossier Patient' : 'Créer Dossier Patient'}
                                     </>
                                 ) : (
                                     <>
-                                        <span>📅</span> Détails de la Réunion
+                                        <Calendar className="w-5 h-5 text-cyan-400" />
+                                        Détails de la Réunion
                                     </>
                                 )}
                             </h2>
                             <button
                                 onClick={() => setIsModalOpen(false)}
-                                className="text-slate-400 hover:text-white transition-colors"
+                                aria-label="Fermer"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/8 transition-all duration-200 cursor-pointer"
                             >
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <div className="p-6">
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto px-6 py-5">
+
+                            {/* ── DETAILS modal ─────────────────────────────────── */}
                             {modalType === 'details' ? (
                                 <div className="space-y-4">
                                     {isAdmin(selectedMeeting) ? (
                                         <>
+                                            {/* Subject */}
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-300 mb-2">Sujet <span className="text-red-400">*</span></label>
+                                                <label className={labelClass}>
+                                                    Sujet <span className="text-red-400">*</span>
+                                                </label>
                                                 <input
                                                     type="text"
                                                     value={detailsForm.subject}
                                                     onChange={(e) => setDetailsForm({ ...detailsForm, subject: e.target.value })}
-                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                                    className={inputClass}
                                                 />
                                             </div>
+
+                                            {/* Description */}
                                             <div>
-                                                <label className="block text-sm font-medium text-slate-300 mb-2">Description</label>
+                                                <label className={labelClass}>Description</label>
                                                 <textarea
                                                     value={detailsForm.description}
                                                     onChange={(e) => setDetailsForm({ ...detailsForm, description: e.target.value })}
                                                     rows={3}
-                                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors resize-none"
+                                                    className={`${inputClass} resize-none`}
                                                 />
                                             </div>
-                                            <div className="border-t border-slate-700 pt-4">
-                                                <h3 className="text-sm font-semibold text-teal-400 mb-3 flex items-center gap-2">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                                    </svg>
+
+                                            {/* Patient section */}
+                                            <div className="border-t border-white/8 pt-4">
+                                                <h3 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
+                                                    <User className="w-4 h-4" />
                                                     Patient concerné
                                                 </h3>
                                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                     <div>
-                                                        <label className="block text-sm font-medium text-slate-300 mb-2">Nom du patient</label>
+                                                        <label className={labelClass}>Nom du patient</label>
                                                         <input
                                                             type="text"
                                                             value={detailsForm.patientLastName}
                                                             onChange={(e) => setDetailsForm({ ...detailsForm, patientLastName: e.target.value })}
-                                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                                            className={inputClass}
                                                         />
                                                     </div>
                                                     <div>
-                                                        <label className="block text-sm font-medium text-slate-300 mb-2">Prénom du patient</label>
+                                                        <label className={labelClass}>Prénom du patient</label>
                                                         <input
                                                             type="text"
                                                             value={detailsForm.patientFirstName}
                                                             onChange={(e) => setDetailsForm({ ...detailsForm, patientFirstName: e.target.value })}
-                                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                                            className={inputClass}
                                                         />
                                                     </div>
                                                 </div>
                                             </div>
+
+                                            {/* Time & Duration */}
                                             <div className="grid grid-cols-2 gap-4">
                                                 <div>
-                                                    <label className="block text-sm font-medium text-slate-300 mb-2">Heure <span className="text-red-400">*</span></label>
+                                                    <label className={labelClass}>
+                                                        Heure <span className="text-red-400">*</span>
+                                                    </label>
                                                     <input
                                                         type="time"
                                                         value={detailsForm.time}
                                                         onChange={(e) => setDetailsForm({ ...detailsForm, time: e.target.value })}
-                                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                                        className={inputClass}
                                                     />
                                                 </div>
                                                 <div>
-                                                    <label className="block text-sm font-medium text-slate-300 mb-2">Durée (min)</label>
+                                                    <label className={labelClass}>Durée (min)</label>
                                                     <input
                                                         type="number"
                                                         min={5}
                                                         step={5}
                                                         value={detailsForm.duration}
                                                         onChange={(e) => setDetailsForm({ ...detailsForm, duration: parseInt(e.target.value) || 0 })}
-                                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                                        className={inputClass}
                                                     />
                                                 </div>
                                             </div>
-                                            <div className="border-t border-slate-700 pt-4 mt-4">
-                                                <h3 className="text-sm font-semibold text-teal-400 mb-3 flex items-center gap-2">
-                                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                    </svg>
+
+                                            {/* Participants (admin edit) */}
+                                            <div className="border-t border-white/8 pt-4">
+                                                <h3 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
+                                                    <Users className="w-4 h-4" />
                                                     Participants
                                                 </h3>
-                                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                                                     {allUsers
                                                         .filter(u => u.id !== (selectedMeeting.roomAdmin?.id || selectedMeeting.roomAdmin))
                                                         .map(u => (
-                                                            <label key={u.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer">
+                                                            <label
+                                                                key={u.id}
+                                                                className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/4 cursor-pointer transition-colors duration-150"
+                                                            >
                                                                 <input
                                                                     type="checkbox"
                                                                     checked={editParticipants.includes(u.id)}
@@ -656,100 +765,149 @@ const Meetings: React.FC = () => {
                                                                             setEditParticipants(prev => prev.filter(id => id !== u.id));
                                                                         }
                                                                     }}
-                                                                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500"
+                                                                    className="w-4 h-4 rounded accent-cyan-500 cursor-pointer"
                                                                 />
-                                                                <span className="text-white text-sm">
+                                                                <span className="text-slate-200 text-sm">
                                                                     {u.firstName} {u.lastName}
                                                                 </span>
                                                                 {u.profession?.name && (
-                                                                    <span className="text-xs text-slate-400">({u.profession.name})</span>
+                                                                    <span className="text-xs text-slate-500 ml-auto">({u.profession.name})</span>
                                                                 )}
                                                             </label>
                                                         ))}
                                                     {allUsers.filter(u => u.id !== (selectedMeeting.roomAdmin?.id || selectedMeeting.roomAdmin)).length === 0 && (
-                                                        <p className="text-slate-500 text-sm">Aucun autre utilisateur disponible</p>
+                                                        <p className="text-slate-500 text-sm px-3 py-2">Aucun autre utilisateur disponible</p>
                                                     )}
                                                 </div>
                                             </div>
+
                                             {detailsError && (
-                                                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">
+                                                <div className="flex items-start gap-2.5 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-sm">
+                                                    <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
                                                     {detailsError}
                                                 </div>
                                             )}
                                         </>
                                     ) : (
+                                        /* Non-admin read-only view */
                                         <>
-                                            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                                                <div className="text-slate-400 text-sm mb-1">Titre</div>
-                                                <div className="text-white font-semibold text-lg">{selectedMeeting.subject}</div>
+                                            <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4">
+                                                <p className="text-xs text-slate-500 mb-1">Titre</p>
+                                                <p className="text-slate-50 font-semibold text-base">{selectedMeeting.subject}</p>
                                             </div>
                                             {selectedMeeting.description && (
-                                                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                                                    <div className="text-slate-400 text-sm mb-1">Description</div>
-                                                    <div className="text-white">{selectedMeeting.description}</div>
+                                                <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4">
+                                                    <p className="text-xs text-slate-500 mb-1">Description</p>
+                                                    <p className="text-slate-200">{selectedMeeting.description}</p>
                                                 </div>
                                             )}
                                             {(selectedMeeting.patientLastName || selectedMeeting.patientFirstName) && (
-                                                <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                                                    <div className="text-slate-400 text-sm mb-1">Patient concerné</div>
-                                                    <div className="text-white font-semibold text-lg">{selectedMeeting.patientLastName} {selectedMeeting.patientFirstName}</div>
+                                                <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4">
+                                                    <p className="text-xs text-slate-500 mb-1">Patient concerné</p>
+                                                    <p className="text-slate-50 font-semibold">
+                                                        {selectedMeeting.patientLastName} {selectedMeeting.patientFirstName}
+                                                    </p>
                                                 </div>
                                             )}
-                                            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                                                <div className="text-slate-400 text-sm mb-1">Heure</div>
-                                                <div className="text-white font-semibold text-lg">{selectedMeeting.time}</div>
-                                            </div>
-                                            <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                                                <div className="text-slate-400 text-sm mb-1">Durée</div>
-                                                <div className="text-white font-semibold text-lg">{selectedMeeting.duration} min</div>
+                                            <div className="grid grid-cols-2 gap-4">
+                                                <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4">
+                                                    <p className="text-xs text-slate-500 mb-1">Heure</p>
+                                                    <p className="text-slate-50 font-semibold flex items-center gap-1.5">
+                                                        <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                                                        {selectedMeeting.time}
+                                                    </p>
+                                                </div>
+                                                <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4">
+                                                    <p className="text-xs text-slate-500 mb-1">Durée</p>
+                                                    <p className="text-slate-50 font-semibold">{selectedMeeting.duration} min</p>
+                                                </div>
                                             </div>
                                         </>
                                     )}
-                                    <div className="bg-slate-800/50 p-4 rounded-lg border border-slate-700">
-                                        <div className="text-slate-400 text-sm mb-1">Participants</div>
-                                        <div className="flex flex-wrap gap-2 mt-2">
+
+                                    {/* Participants list (always visible) */}
+                                    <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4">
+                                        <p className="text-xs text-slate-500 mb-3 flex items-center gap-1.5">
+                                            <Users className="w-3.5 h-3.5" />
+                                            Participants
+                                        </p>
+                                        <div className="flex flex-wrap gap-2">
                                             {selectedMeeting.participants?.map((p, index) => (
-                                                <span key={index} className={`px-3 py-1 rounded-full text-sm border ${p.formFilled ? 'bg-teal-500/20 text-teal-300 border-teal-500/30' : 'bg-slate-700/50 text-slate-300 border-slate-600'}`}>
+                                                <span
+                                                    key={index}
+                                                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium border ${
+                                                        p.formFilled
+                                                            ? 'bg-cyan-500/15 text-cyan-300 border-cyan-500/30'
+                                                            : 'bg-white/6 text-slate-300 border-white/8'
+                                                    }`}
+                                                >
+                                                    {p.formFilled && <CheckCircle className="w-3 h-3" />}
                                                     {p.user?.firstName || p.user?.fistName} {p.user?.lastName}
                                                     {p.showProfession && p.profession?.name && ` (${p.profession.name})`}
-                                                    {p.formFilled && ' ✓'}
                                                 </span>
                                             ))}
                                         </div>
                                     </div>
                                 </div>
+
                             ) : (
-                                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
-                                    <div className="bg-slate-800/40 border border-slate-700 rounded-lg p-4 space-y-3">
-                                        <div className="flex items-center justify-between gap-3">
-                                            <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Remplissage vocal</h3>
+                                /* ── PATIENT FORM modal ───────────────────────────── */
+                                <div className="space-y-4">
+
+                                    {/* Voice recording panel */}
+                                    <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-4 space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
+                                                Remplissage vocal
+                                            </h3>
                                             <button
                                                 onClick={handleToggleVoice}
-                                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${isRecording ? 'bg-red-600 hover:bg-red-700 text-white' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+                                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-offset-0 ${
+                                                    isRecording
+                                                        ? 'bg-red-600 hover:bg-red-500 text-white focus:ring-red-500/50'
+                                                        : 'bg-white/8 hover:bg-white/12 text-slate-200 border border-white/10 focus:ring-cyan-500/50'
+                                                }`}
                                             >
-                                                {isRecording ? 'Arrêter dictée' : 'Démarrer dictée'}
+                                                {isRecording ? (
+                                                    <><MicOff className="w-3.5 h-3.5" /> Arrêter dictée</>
+                                                ) : (
+                                                    <><Mic className="w-3.5 h-3.5" /> Démarrer dictée</>
+                                                )}
                                             </button>
                                         </div>
-                                        <div className="text-[11px] text-slate-400">
-                                            Statut transcription: {wsStatus}
-                                        </div>
+
+                                        <p className="text-[11px] text-slate-500">
+                                            Statut transcription : <span className="text-slate-400">{wsStatus}</span>
+                                        </p>
+
                                         {autofillStatus && (
-                                            <p className="text-[11px] text-emerald-300">{autofillStatus}</p>
+                                            <p className="text-[11px] text-cyan-300 flex items-center gap-1.5">
+                                                <RefreshCw className="w-3 h-3 shrink-0" />
+                                                {autofillStatus}
+                                            </p>
                                         )}
+
                                         {autofilledKeys.length > 0 && (
                                             <div className="flex flex-wrap gap-1.5">
                                                 {autofilledKeys.map((key) => (
-                                                    <span key={key} className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                                                    <span
+                                                        key={key}
+                                                        className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-medium"
+                                                    >
                                                         {key}
                                                     </span>
                                                 ))}
                                             </div>
                                         )}
+
                                         {liveTranscript && (
-                                            <div className="bg-slate-900/70 border border-slate-700 rounded-lg p-3 max-h-28 overflow-y-auto">
-                                                <p className="text-xs text-slate-300 whitespace-pre-wrap">{liveTranscript}</p>
+                                            <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-xl p-3 max-h-32 overflow-y-auto">
+                                                <p className="text-xs text-slate-300 whitespace-pre-wrap leading-relaxed">
+                                                    {liveTranscript}
+                                                </p>
                                             </div>
                                         )}
+
                                         {!!liveTranscript && !isRecording && (
                                             <button
                                                 onClick={() => {
@@ -758,34 +916,43 @@ const Meetings: React.FC = () => {
                                                     setAutofillStatus('');
                                                     lastProcessedTranscriptRef.current = '';
                                                 }}
-                                                className="px-3 py-1 rounded-lg text-[11px] bg-slate-700 hover:bg-slate-600 text-white"
+                                                className="text-[11px] px-3 py-1.5 rounded-xl bg-white/6 hover:bg-white/10 text-slate-400 hover:text-slate-200 border border-white/8 transition-all duration-200 cursor-pointer"
                                             >
                                                 Effacer transcription
                                             </button>
                                         )}
                                     </div>
 
-                                    {/* Champs fixes préremplis automatiquement */}
-                                    <div className="space-y-3">
-                                        <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">Patient concerné</h3>
-                                        <div className="bg-slate-800/50 border border-slate-700 rounded-lg px-4 py-3">
-                                            <span className="text-white font-semibold">{editForm.lastName || ''} {editForm.firstName || ''}</span>
+                                    {/* Fixed pre-filled fields — Patient */}
+                                    <div className="space-y-2">
+                                        <h3 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
+                                            Patient concerné
+                                        </h3>
+                                        <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-xl px-4 py-3 flex items-center gap-2">
+                                            <User className="w-4 h-4 text-slate-500 shrink-0" />
+                                            <span className="text-slate-50 font-semibold">
+                                                {editForm.lastName || ''} {editForm.firstName || ''}
+                                            </span>
                                         </div>
                                     </div>
 
-                                    {/* Champs générés depuis le formulaire OLGA de la profession */}
+                                    {/* Dynamic form fields from OLGA profession schema */}
                                     {formSchema && formSchema.form.length > 0 && (
-                                        <div className="border-t border-slate-700 pt-4 space-y-4">
-                                            <h3 className="text-xs font-semibold text-teal-400 uppercase tracking-wider">
+                                        <div className="border-t border-white/8 pt-4 space-y-4">
+                                            <h3 className="text-xs font-semibold text-cyan-400 uppercase tracking-wider">
                                                 {formSchema.form_label}
                                             </h3>
                                             {formSchema.form.map((field: FormFieldSchema) => (
                                                 <div key={field.unique_id}>
-                                                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                                                    <label className={labelClass}>
                                                         {field.field_label}
-                                                        {field.field_required && <span className="text-rose-400 ml-1">*</span>}
+                                                        {field.field_required && (
+                                                            <span className="text-red-400 ml-1">*</span>
+                                                        )}
                                                         {field.field_type === 'dicom' && (
-                                                            <span className="ml-2 text-xs text-sky-400 font-mono bg-sky-500/10 px-1.5 py-0.5 rounded">DICOM</span>
+                                                            <span className="ml-2 text-[10px] text-cyan-400 font-mono bg-cyan-500/10 border border-cyan-500/20 px-1.5 py-0.5 rounded-md">
+                                                                DICOM
+                                                            </span>
                                                         )}
                                                     </label>
                                                     {renderFormField(field)}
@@ -794,15 +961,20 @@ const Meetings: React.FC = () => {
                                         </div>
                                     )}
 
+                                    {/* No schema warning */}
                                     {!formSchema && (
-                                        <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3">
-                                            <p className="text-amber-300 text-sm">Le schéma du formulaire distant n'est pas encore disponible. Le formulaire ne peut pas être généré.</p>
+                                        <div className="flex items-start gap-2.5 bg-amber-500/10 border border-amber-500/20 rounded-xl px-4 py-3">
+                                            <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                                            <p className="text-amber-400 text-sm">
+                                                Le schéma du formulaire distant n'est pas encore disponible. Le formulaire ne peut pas être généré.
+                                            </p>
                                         </div>
                                     )}
 
-                                    {/* Erreur de sauvegarde */}
+                                    {/* Save error */}
                                     {saveError && (
-                                        <div className="bg-red-500/10 border border-red-500/30 rounded-lg p-3">
+                                        <div className="flex items-start gap-2.5 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                                            <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
                                             <p className="text-red-400 text-sm">{saveError}</p>
                                         </div>
                                     )}
@@ -810,32 +982,28 @@ const Meetings: React.FC = () => {
                             )}
                         </div>
 
+                        {/* Modal Footer */}
                         {(modalType === 'patient' || (modalType === 'details' && isAdmin(selectedMeeting))) && (
-                            <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-800 bg-slate-900/50">
+                            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/8">
                                 <button
                                     onClick={() => setIsModalOpen(false)}
-                                    className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                                    className="bg-white/8 hover:bg-white/12 text-slate-200 border border-white/10 px-4 py-2 rounded-xl transition-all duration-200 cursor-pointer text-sm font-medium"
                                 >
                                     Annuler
                                 </button>
                                 <button
                                     onClick={modalType === 'patient' ? handleSaveForm : handleSaveDetails}
                                     disabled={modalType === 'details' && detailsSaving}
-                                    className="px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-medium transition-colors flex items-center gap-2"
+                                    className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
                                 >
                                     {modalType === 'details' && detailsSaving ? (
                                         <>
-                                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                            </svg>
+                                            <RefreshCw className="w-4 h-4 animate-spin" />
                                             Sauvegarde...
                                         </>
                                     ) : (
                                         <>
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                            </svg>
+                                            <Save className="w-4 h-4" />
                                             Enregistrer
                                         </>
                                     )}
@@ -846,115 +1014,142 @@ const Meetings: React.FC = () => {
                 </div>
             )}
 
+            {/* ══════════════════════════════════════════════════════
+                MODAL — Annotation collaborative OncoVision
+            ══════════════════════════════════════════════════════ */}
+            {oncovisionOpen && selectedMeeting?.collaborationId && (
+                <div className="fixed inset-0 bg-slate-950/90 backdrop-blur-sm flex items-center justify-center z-60 p-4">
+                    <div className="relative w-full max-w-6xl h-[85vh] bg-[#0D1526] border border-white/10 rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-white/8 shrink-0">
+                            <h2 className="text-base font-semibold text-slate-50">Annotation collaborative — {selectedMeeting.subject}</h2>
+                            <button
+                                onClick={() => setOncovisionOpen(false)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/8 transition-all duration-200 cursor-pointer"
+                            >
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="flex-1 overflow-hidden">
+                            <CollaborativeAnnotation
+                                roomId={selectedMeeting.collaborationId}
+                                meetingId={selectedMeeting.id}
+                            />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ══════════════════════════════════════════════════════
+                MODAL 3 — Create Meeting
+            ══════════════════════════════════════════════════════ */}
             {isCreateModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-                    <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-3xl mx-4 max-h-[90vh] overflow-y-auto">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                            <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                                <svg className="w-5 h-5 text-teal-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                                </svg>
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="relative w-full max-w-2xl backdrop-blur-2xl bg-[#0D1526] border border-white/10 rounded-2xl shadow-2xl max-h-[90vh] flex flex-col">
+
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-white/8">
+                            <h2 className="text-lg font-semibold text-slate-50 flex items-center gap-2.5">
+                                <Plus className="w-5 h-5 text-cyan-400" />
                                 Nouvelle réunion
                             </h2>
                             <button
                                 onClick={() => setIsCreateModalOpen(false)}
-                                className="text-slate-400 hover:text-white transition-colors"
+                                aria-label="Fermer"
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-100 hover:bg-white/8 transition-all duration-200 cursor-pointer"
                             >
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                                <X className="w-5 h-5" />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-5">
-                            {/* Informations de la réunion */}
+                        {/* Modal Body */}
+                        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+
+                            {/* Subject */}
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">
+                                <label className={labelClass}>
                                     Sujet <span className="text-red-400">*</span>
                                 </label>
                                 <input
                                     type="text"
                                     value={createForm.subject}
                                     onChange={(e) => setCreateForm({ ...createForm, subject: e.target.value })}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                    className={inputClass}
                                     placeholder="Sujet de la réunion"
                                 />
                             </div>
 
+                            {/* Description */}
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">
-                                    Description
-                                </label>
+                                <label className={labelClass}>Description</label>
                                 <textarea
                                     value={createForm.description}
                                     onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
                                     rows={3}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors resize-none"
+                                    className={`${inputClass} resize-none`}
                                     placeholder="Description (optionnelle)"
                                 />
                             </div>
 
-                            {/* Identité du patient */}
-                            <div className="border-t border-slate-700 pt-5">
-                                <h3 className="text-sm font-semibold text-teal-400 mb-4 flex items-center gap-2">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
+                            {/* Patient identity */}
+                            <div className="border-t border-white/8 pt-5">
+                                <h3 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
+                                    <User className="w-4 h-4" />
                                     Patient concerné
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                                        <label className={labelClass}>
                                             Nom du patient <span className="text-red-400">*</span>
                                         </label>
                                         <input
                                             type="text"
                                             value={createForm.patientLastName}
                                             onChange={(e) => setCreateForm({ ...createForm, patientLastName: e.target.value })}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                            className={inputClass}
                                             placeholder="Nom du patient"
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-slate-300 mb-2">
+                                        <label className={labelClass}>
                                             Prénom du patient <span className="text-red-400">*</span>
                                         </label>
                                         <input
                                             type="text"
                                             value={createForm.patientFirstName}
                                             onChange={(e) => setCreateForm({ ...createForm, patientFirstName: e.target.value })}
-                                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                            className={inputClass}
                                             placeholder="Prénom du patient"
                                         />
                                     </div>
                                 </div>
                             </div>
 
+                            {/* Date / Time / Duration — 3-col grid */}
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                                    <label className={labelClass}>
                                         Date <span className="text-red-400">*</span>
                                     </label>
                                     <input
                                         type="date"
                                         value={createForm.scheduledDate}
                                         onChange={(e) => setCreateForm({ ...createForm, scheduledDate: e.target.value })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                                    <label className={labelClass}>
                                         Heure <span className="text-red-400">*</span>
                                     </label>
                                     <input
                                         type="time"
                                         value={createForm.time}
                                         onChange={(e) => setCreateForm({ ...createForm, time: e.target.value })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                        className={inputClass}
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-slate-300 mb-2">
+                                    <label className={labelClass}>
                                         Durée (min) <span className="text-red-400">*</span>
                                     </label>
                                     <input
@@ -963,25 +1158,26 @@ const Meetings: React.FC = () => {
                                         step={5}
                                         value={createForm.duration}
                                         onChange={(e) => setCreateForm({ ...createForm, duration: parseInt(e.target.value) || 0 })}
-                                        className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
+                                        className={inputClass}
                                         placeholder="30"
                                     />
                                 </div>
                             </div>
 
-                            {/* Sélection des participants */}
-                            <div className="border-t border-slate-700 pt-5">
-                                <h3 className="text-sm font-semibold text-teal-400 mb-4 flex items-center gap-2">
-                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
+                            {/* Participants */}
+                            <div className="border-t border-white/8 pt-5">
+                                <h3 className="text-sm font-semibold text-cyan-400 mb-3 flex items-center gap-2">
+                                    <Users className="w-4 h-4" />
                                     Participants
                                 </h3>
-                                <div className="space-y-2 max-h-48 overflow-y-auto">
+                                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
                                     {allUsers
                                         .filter(u => u.id !== user?.id)
                                         .map(u => (
-                                            <label key={u.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-slate-800/50 cursor-pointer">
+                                            <label
+                                                key={u.id}
+                                                className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-white/4 cursor-pointer transition-colors duration-150"
+                                            >
                                                 <input
                                                     type="checkbox"
                                                     checked={selectedParticipants.includes(u.id)}
@@ -992,55 +1188,52 @@ const Meetings: React.FC = () => {
                                                             setSelectedParticipants(selectedParticipants.filter(id => id !== u.id));
                                                         }
                                                     }}
-                                                    className="w-4 h-4 rounded border-slate-600 bg-slate-800 text-teal-500 focus:ring-teal-500"
+                                                    className="w-4 h-4 rounded accent-cyan-500 cursor-pointer"
                                                 />
-                                                <span className="text-white text-sm">
+                                                <span className="text-slate-200 text-sm">
                                                     {u.firstName} {u.lastName}
                                                 </span>
                                                 {u.profession?.name && (
-                                                    <span className="text-xs text-slate-400">({u.profession.name})</span>
+                                                    <span className="text-xs text-slate-500 ml-auto">({u.profession.name})</span>
                                                 )}
                                             </label>
                                         ))}
                                     {allUsers.filter(u => u.id !== user?.id).length === 0 && (
-                                        <p className="text-slate-500 text-sm">Aucun autre utilisateur disponible</p>
+                                        <p className="text-slate-500 text-sm px-3 py-2">Aucun autre utilisateur disponible</p>
                                     )}
                                 </div>
                             </div>
 
-                            {/* Erreur de création */}
+                            {/* Create error */}
                             {createError && (
-                                <div className="bg-red-500/10 border border-red-500/30 rounded-lg px-4 py-3 text-red-400 text-sm">
-                                    {createError}
+                                <div className="flex items-start gap-2.5 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3">
+                                    <AlertTriangle className="w-4 h-4 text-red-400 mt-0.5 shrink-0" />
+                                    <p className="text-red-400 text-sm">{createError}</p>
                                 </div>
                             )}
                         </div>
 
-                        <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-800 bg-slate-900/50">
+                        {/* Modal Footer */}
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/8">
                             <button
                                 onClick={() => setIsCreateModalOpen(false)}
-                                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                                className="bg-white/8 hover:bg-white/12 text-slate-200 border border-white/10 px-4 py-2 rounded-xl transition-all duration-200 cursor-pointer text-sm font-medium"
                             >
                                 Annuler
                             </button>
                             <button
                                 onClick={handleCreateMeeting}
                                 disabled={createLoading}
-                                className="px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-medium transition-colors flex items-center gap-2"
+                                className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500/50 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 text-sm"
                             >
                                 {createLoading ? (
                                     <>
-                                        <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                                        </svg>
+                                        <RefreshCw className="w-4 h-4 animate-spin" />
                                         Création...
                                     </>
                                 ) : (
                                     <>
-                                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                                        </svg>
+                                        <Video className="w-4 h-4" />
                                         Créer la réunion
                                     </>
                                 )}
@@ -1050,95 +1243,122 @@ const Meetings: React.FC = () => {
                 </div>
             )}
 
-            <div className="max-w-5xl mx-auto">
+            {/* ══════════════════════════════════════════════════════
+                MAIN PAGE
+            ══════════════════════════════════════════════════════ */}
+            <div className="max-w-5xl mx-auto px-4 sm:px-6 py-8">
+
+                {/* Header row */}
                 <div className="flex items-center justify-between mb-8">
                     <div className="flex items-center gap-4">
                         <Link
                             to="/"
-                            className="p-2 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition-colors"
+                            aria-label="Retour"
+                            className="p-2 rounded-xl bg-white/4 hover:bg-white/8 border border-white/8 text-slate-400 hover:text-slate-100 transition-all duration-200 cursor-pointer"
                         >
-                            <svg className="w-5 h-5 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                            </svg>
+                            <ChevronLeft className="w-5 h-5" />
                         </Link>
-                        <h2 className="text-3xl font-bold flex items-center gap-3">
-                            <span className="w-2 h-8 bg-teal-500 rounded-full inline-block"></span>
+                        <h1 className="text-2xl font-bold text-slate-50 tracking-tight">
                             Réunions
-                        </h2>
+                        </h1>
                     </div>
                     <button
                         onClick={() => setIsCreateModalOpen(true)}
-                        className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg font-medium transition-all flex items-center gap-2"
+                        className="bg-cyan-600 hover:bg-cyan-500 text-white font-semibold px-5 py-2.5 rounded-xl transition-all duration-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-cyan-500/50 flex items-center gap-2 text-sm"
                     >
-                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
+                        <Plus className="w-4 h-4" />
                         Nouvelle réunion
                     </button>
                 </div>
 
-                <div className="grid gap-6">
+                {/* Meetings list */}
+                <div className="grid gap-4">
                     {loading ? (
-                        <div className="text-center text-slate-400 py-8">Chargement des réunions...</div>
+                        <div className="flex flex-col items-center justify-center py-20 gap-3">
+                            <RefreshCw className="w-6 h-6 text-slate-500 animate-spin" />
+                            <p className="text-slate-500 text-sm">Chargement des réunions...</p>
+                        </div>
                     ) : meetings.length === 0 ? (
-                        <div className="text-center text-slate-400 py-8">Aucune réunion en attente</div>
+                        <div className="flex flex-col items-center justify-center py-24 gap-4">
+                            <div className="p-5 rounded-2xl bg-white/4 border border-white/8">
+                                <Calendar className="w-8 h-8 text-slate-500" />
+                            </div>
+                            <div className="text-center">
+                                <p className="text-slate-300 font-medium mb-1">Aucune réunion en attente</p>
+                                <p className="text-slate-500 text-sm">Créez une nouvelle réunion pour commencer</p>
+                            </div>
+                        </div>
                     ) : (
                         meetings.map((meeting) => (
                             <div
                                 key={meeting.id}
-                                className="group bg-slate-900 border border-slate-800 rounded-xl p-6 hover:border-teal-500/50 transition-all duration-300 shadow-lg hover:shadow-teal-500/10"
+                                className="group backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-5 hover:border-cyan-500/30 hover:bg-white/6 transition-all duration-200"
                             >
-                                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-3 mb-2">
-                                            <span className="px-3 py-1 bg-slate-800 text-slate-300 text-xs rounded-full border border-slate-700 font-mono">
+                                <div className="flex flex-col md:flex-row items-start md:items-center gap-5">
+
+                                    {/* Left color bar */}
+                                    <div className="hidden md:block w-1 self-stretch rounded-full bg-cyan-500/60 shrink-0" />
+
+                                    {/* Meeting info */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2.5 mb-1.5 flex-wrap">
+                                            <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-300 text-xs font-medium border border-cyan-500/20">
+                                                <Clock className="w-3 h-3" />
                                                 {meeting.time}
                                             </span>
-                                            <h3 className="text-xl font-semibold text-white group-hover:text-teal-400 transition-colors">
-                                                {meeting.subject}
-                                            </h3>
                                         </div>
+                                        <h3 className="text-base font-semibold text-slate-50 group-hover:text-cyan-300 transition-colors duration-200 truncate">
+                                            {meeting.subject}
+                                        </h3>
                                         {meeting.patientLastName && meeting.patientFirstName && (
-                                            <p className="text-slate-400 text-sm flex items-center gap-2">
-                                                <span className="w-1.5 h-1.5 rounded-full bg-teal-500"></span>
-                                                Patient : {meeting.patientLastName} {meeting.patientFirstName}
+                                            <p className="text-slate-400 text-sm mt-0.5 flex items-center gap-1.5">
+                                                <User className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                                {meeting.patientLastName} {meeting.patientFirstName}
                                             </p>
                                         )}
                                     </div>
 
-                                    <div className="flex flex-wrap items-center gap-4 w-full md:w-auto">
+                                    {/* Action buttons */}
+                                    <div className="flex flex-wrap items-center gap-2 w-full md:w-auto shrink-0">
+                                        {/* Details */}
                                         <button
                                             onClick={() => handleOpenDetailsModal(meeting)}
-                                            className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-sm rounded-lg border border-slate-700 transition-all flex items-center gap-2"
+                                            className="bg-white/8 hover:bg-white/12 text-slate-200 border border-white/10 px-4 py-2 rounded-xl transition-all duration-200 cursor-pointer text-sm flex items-center gap-1.5"
                                         >
-                                            <span>ℹ️</span> Détails
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                            Détails
                                         </button>
 
+                                        {/* Prerequisites */}
                                         {isCurrentUserFormFilled(meeting) ? (
                                             <button
                                                 onClick={() => handleOpenPatientModal(meeting)}
-                                                className="px-4 py-2 bg-teal-500/10 hover:bg-teal-500/20 text-teal-400 text-sm rounded-lg border border-teal-500/20 hover:border-teal-500/40 flex items-center gap-2 transition-all cursor-pointer"
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-cyan-500/15 hover:bg-cyan-500/25 text-cyan-300 border border-cyan-500/30 transition-all duration-200 cursor-pointer"
                                             >
-                                                <span>✅</span> Pré-requis réalisé
+                                                <CheckCircle className="w-3.5 h-3.5" />
+                                                Pré-requis réalisé
                                             </button>
                                         ) : (
                                             <button
                                                 onClick={() => handleOpenPatientModal(meeting)}
-                                                className="px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 text-sm rounded-lg border border-amber-500/20 hover:border-amber-500/40 flex items-center gap-2 transition-all cursor-pointer"
+                                                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20 transition-all duration-200 cursor-pointer"
                                             >
-                                                <span>⚠️</span> Pré-requis manquant
+                                                <AlertTriangle className="w-3.5 h-3.5" />
+                                                Pré-requis manquant
                                             </button>
                                         )}
 
+                                        {/* Join */}
                                         <button
                                             onClick={() => handleJoinMeeting(meeting)}
                                             disabled={!isCurrentUserFormFilled(meeting)}
-                                            className={`px-6 py-2 font-medium rounded-lg transition-all transform hover:-translate-y-0.5 active:translate-y-0 ${
+                                            className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition-all duration-200 ${
                                                 isCurrentUserFormFilled(meeting)
-                                                    ? 'bg-teal-600 hover:bg-teal-500 text-white shadow-lg shadow-teal-900/20 hover:shadow-teal-500/20'
-                                                    : 'bg-slate-700 text-slate-400 cursor-not-allowed opacity-60'
+                                                    ? 'bg-green-600 hover:bg-green-500 text-white cursor-pointer'
+                                                    : 'bg-white/4 text-slate-500 border border-white/6 opacity-50 cursor-not-allowed'
                                             }`}
                                         >
+                                            <Video className="w-3.5 h-3.5" />
                                             Rejoindre
                                         </button>
                                     </div>

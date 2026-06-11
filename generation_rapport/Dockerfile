@@ -1,11 +1,9 @@
 FROM python:3.11-slim
 
-# Install system deps required by Whisper / audio processing
+# Install system deps (ffmpeg required to convert audio formats before sending to Groq)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ffmpeg \
-       libsndfile1 \
-       build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

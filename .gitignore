@@ -14,3 +14,5 @@ olga/.env.front
 olga/.env.mysql
 olga/config/config.json
 olga/config/apiKey.json
+UserswaterNexusCarecertskey.pem
+*.pem

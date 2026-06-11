@@ -1,0 +1,248 @@
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: pixtral_user
+      POSTGRES_PASSWORD: pixtral_pass
+      POSTGRES_DB: postgres
+    ports:
+      - "15432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U pixtral_user -d postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - pathocollab-network
+
+  postgres-init:
+    image: postgres:16
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PGPASSWORD: pixtral_pass
+    command: >
+      sh -c "
+      for db in auth_db cases_db workflow_db images_db reports_db; do
+        echo Creating database $$db if missing...;
+        psql -h postgres -U pixtral_user -d postgres -tc \"SELECT 1 FROM pg_database WHERE datname='$$db'\" | grep -q 1 ||
+        psql -h postgres -U pixtral_user -d postgres -c \"CREATE DATABASE $$db\";
+      done;
+      echo PostgreSQL databases are ready.
+      "
+    networks:
+      - pathocollab-network
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "16379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - pathocollab-network
+
+  minio:
+    image: minio/minio:latest
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks:
+      - pathocollab-network
+
+  minio-init:
+    image: minio/mc:latest
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minioadmin minioadmin;
+      mc mb --ignore-existing local/pixtral-images;
+      mc mb --ignore-existing local/pixtral-wsi-images;
+      echo MinIO buckets are ready.;
+      exit 0;
+      "
+    networks:
+      - pathocollab-network
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    restart: unless-stopped
+    ports:
+      - "16333:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - pathocollab-network
+
+  auth-service:
+    image: ultimatedpv4/pathocollab-auth-service:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      SERVICE_PORT: "8001"
+      DATABASE_URL: postgresql+asyncpg://pixtral_user:pixtral_pass@postgres:5432/auth_db
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://pixtral_user:pixtral_pass@postgres:5432/auth_db
+      JWT_SECRET_KEY: super-secret-key
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+    ports:
+      - "18001:8001"
+    networks:
+      - pathocollab-network
+
+  cases-service:
+    image: ultimatedpv4/pathocollab-cases-service:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      SERVICE_PORT: "8002"
+      DATABASE_URL: postgresql+asyncpg://pixtral_user:pixtral_pass@postgres:5432/cases_db
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://pixtral_user:pixtral_pass@postgres:5432/cases_db
+      REPORTS_SERVICE_URL: http://reports-service:8005
+      WORKFLOW_SERVICE_URL: http://workflow-service:8003
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+    ports:
+      - "18002:8002"
+    networks:
+      - pathocollab-network
+
+  workflow-service:
+    image: ultimatedpv4/pathocollab-workflow-service:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      SERVICE_PORT: "8003"
+      DATABASE_URL: postgresql+asyncpg://pixtral_user:pixtral_pass@postgres:5432/workflow_db
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://pixtral_user:pixtral_pass@postgres:5432/workflow_db
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    ports:
+      - "18003:8003"
+    networks:
+      - pathocollab-network
+
+  images-service:
+    image: ultimatedpv4/pathocollab-images-service:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      SERVICE_PORT: "8004"
+      DATABASE_URL: postgresql+asyncpg://pixtral_user:pixtral_pass@postgres:5432/images_db
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://pixtral_user:pixtral_pass@postgres:5432/images_db
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_BUCKET_NAME: pixtral-wsi-images
+      MINIO_BUCKET_IMAGES: pixtral-images
+      MINIO_BUCKET_WSI: pixtral-wsi-images
+      MINIO_SECURE: "false"
+      MINIO_LAZY_INIT: "true"
+      ORTHANC_ENABLED: "false"
+      INSTANTSEG_ENABLED: "false"
+      PUBLIC_IMAGES_BASE_URL: http://localhost:18004
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    ports:
+      - "18004:8004"
+    networks:
+      - pathocollab-network
+
+  reports-service:
+    image: ultimatedpv4/pathocollab-reports-service:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      SERVICE_PORT: "8005"
+      DATABASE_URL: postgresql+asyncpg://pixtral_user:pixtral_pass@postgres:5432/reports_db
+      ALEMBIC_DATABASE_URL: postgresql+psycopg2://pixtral_user:pixtral_pass@postgres:5432/reports_db
+      QDRANT_ENABLED: "true"
+      QDRANT_URL: http://qdrant:6333
+      WAIT_FOR_QDRANT: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
+      qdrant:
+        condition: service_started
+    ports:
+      - "18005:8005"
+    networks:
+      - pathocollab-network
+
+  backend-gateway:
+    image: ultimatedpv4/pathocollab-backend-gateway:latest
+    platform: linux/amd64
+    restart: unless-stopped
+    environment:
+      AUTH_SERVICE_URL: http://auth-service:8001
+      CASES_SERVICE_URL: http://cases-service:8002
+      WORKFLOW_SERVICE_URL: http://workflow-service:8003
+      IMAGES_SERVICE_URL: http://images-service:8004
+      REPORTS_SERVICE_URL: http://reports-service:8005
+    depends_on:
+      auth-service:
+        condition: service_started
+      cases-service:
+        condition: service_started
+      workflow-service:
+        condition: service_started
+      images-service:
+        condition: service_started
+      reports-service:
+        condition: service_started
+    ports:
+      - "18000:8000"
+    networks:
+      - pathocollab-network
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+  qdrant-data:
+
+networks:
+  pathocollab-network:
+    driver: bridge

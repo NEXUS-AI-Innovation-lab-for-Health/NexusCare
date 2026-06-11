@@ -1,4 +1,6 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
 import { MeetingsService } from './meetings.service';
 import { CreateMeetingDto } from './dto/create-meeting.dto';
 import { UpdateMeetingDto } from './dto/update-meeting.dto';
@@ -21,6 +23,16 @@ export class MeetingsController {
     @Get('pending')
     findPending() {
         return this.meetingsService.findPending();
+    }
+
+    @Post(':id/ensure-collaboration-room')
+    ensureCollaborationRoom(@Param('id') id: string) {
+        return this.meetingsService.ensureCollaborationRoom(id);
+    }
+
+    @Post('repair-collaboration-ids')
+    repairCollaborationIds() {
+        return this.meetingsService.repairCollaborationIds();
     }
 
     @Get('room/:roomId')
@@ -99,6 +111,15 @@ export class MeetingsController {
         @Param('participantId') participantId: string
     ) {
         return this.meetingsService.removeParticipant(id, participantId);
+    }
+
+    @Post(':id/dicom')
+    @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+    uploadDicom(
+        @Param('id') id: string,
+        @UploadedFile() file: Express.Multer.File,
+    ) {
+        return this.meetingsService.uploadDicomToRoom(id, file);
     }
 
     @Patch(':id/participants/:participantId/visibility')

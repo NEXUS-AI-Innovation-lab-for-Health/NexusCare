@@ -1,7 +1,21 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { io, Socket } from 'socket.io-client';
 import { api } from '../services/api';
+import {
+    MessageSquare,
+    Users,
+    Plus,
+    Search,
+    Send,
+    X,
+    ChevronLeft,
+    Hash,
+    UserCircle,
+    Check,
+    CheckCheck,
+    Menu,
+} from 'lucide-react';
 
 interface Message {
     content: string;
@@ -33,6 +47,8 @@ const SERVER_URL = import.meta.env.VITE_WS_URL || "http://localhost:4000";
 
 const Chat: React.FC = () => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const hasAutoJoinedRef = useRef(false);
     const [user, setUser] = useState<User | null>(null);
     const [users, setUsers] = useState<User[]>([]);
     const [groups, setGroups] = useState<Group[]>([]);
@@ -193,6 +209,35 @@ const Chat: React.FC = () => {
         await joinRoom(`group_${group.id}`);
     }, [joinRoom]);
 
+    // Auto-join room from navigation state (e.g. navigate('/chat', { state: { roomId: 'group_xxx' } }))
+    useEffect(() => {
+        if (hasAutoJoinedRef.current) return;
+        const roomId = (location.state as { roomId?: string } | null)?.roomId;
+        if (!roomId || !user) return;
+
+        if (roomId.startsWith('group_')) {
+            if (groups.length === 0) return;
+            const groupId = roomId.slice('group_'.length);
+            const group = groups.find((g) => g.id === groupId);
+            if (group) {
+                hasAutoJoinedRef.current = true;
+                setSidebarTab('groups');
+                selectGroupConversation(group);
+            }
+        } else if (roomId.startsWith('dm_')) {
+            if (users.length === 0) return;
+            const parts = roomId.slice('dm_'.length).split('_');
+            const otherUserId = parts.find((p) => p !== user.id);
+            if (otherUserId) {
+                const otherUser = users.find((u) => u.id === otherUserId);
+                if (otherUser) {
+                    hasAutoJoinedRef.current = true;
+                    selectConversation(otherUser);
+                }
+            }
+        }
+    }, [location.state, user, groups, users, selectGroupConversation, selectConversation]);
+
     const sendMessage = useCallback(() => {
         if (!messageInput.trim() || !user || !currentRoom || !socketRef.current) return;
         const content = messageInput.trim();
@@ -266,33 +311,29 @@ const Chat: React.FC = () => {
             return (
                 <div
                     onClick={() => setShowGroupDetails(true)}
-                    className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center gap-3 shrink-0 cursor-pointer hover:bg-slate-800/60 transition-colors"
+                    className="px-5 py-3.5 bg-white/3 border-b border-white/8 flex items-center gap-3 shrink-0 cursor-pointer hover:bg-white/5 transition-colors duration-150"
                 >
-                    <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
-                        <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                        </svg>
+                    <div className="w-9 h-9 rounded-full bg-cyan-600/30 border border-cyan-500/30 flex items-center justify-center shrink-0">
+                        <Hash className="w-4 h-4 text-cyan-400" />
                     </div>
-                    <div className="flex-1">
-                        <p className="font-semibold text-white">{selectedGroup.name}</p>
-                        <p className="text-xs text-teal-400">{selectedGroup.members.length} membre(s)</p>
+                    <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-slate-50 truncate">{selectedGroup.name}</p>
+                        <p className="text-xs text-cyan-400">{selectedGroup.members.length} membre(s)</p>
                     </div>
-                    <svg className="w-5 h-5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
+                    <Users className="w-4 h-4 text-slate-500 shrink-0" />
                 </div>
             );
         }
         if (selectedUser) {
             return (
-                <div className="px-6 py-4 bg-slate-900 border-b border-slate-800 flex items-center gap-3 shrink-0">
-                    <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center shrink-0">
-                        <span className="text-white text-sm font-semibold">{getInitials(selectedUser)}</span>
+                <div className="px-5 py-3.5 bg-white/3 border-b border-white/8 flex items-center gap-3 shrink-0">
+                    <div className="w-9 h-9 rounded-full bg-cyan-600/20 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                        <span className="text-cyan-300 text-xs font-bold">{getInitials(selectedUser)}</span>
                     </div>
-                    <div>
-                        <p className="font-semibold text-white">{selectedUser.fistName} {selectedUser.lastName}</p>
+                    <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-slate-50 truncate">{selectedUser.fistName} {selectedUser.lastName}</p>
                         {getProfessionName(selectedUser) && (
-                            <p className="text-xs text-teal-400">{getProfessionName(selectedUser)}</p>
+                            <p className="text-xs text-cyan-400 truncate">{getProfessionName(selectedUser)}</p>
                         )}
                     </div>
                 </div>
@@ -302,66 +343,65 @@ const Chat: React.FC = () => {
     };
 
     return (
-        <div className="flex h-screen bg-slate-950 text-slate-100 font-sans overflow-hidden relative">
-            {/* Left Sidebar */}
+        <div className="flex h-screen bg-[#080D1A] text-slate-100 font-sans overflow-hidden relative">
+
+            {/* ── LEFT SIDEBAR ── */}
             <div
-                className={`fixed inset-y-0 left-0 z-30 w-72 sm:static sm:w-80 shrink-0 bg-slate-900 border-r border-slate-800 flex flex-col transform transition-transform duration-200 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
+                className={`fixed inset-y-0 left-0 z-30 w-72 sm:static sm:w-72 shrink-0 bg-white/3 border-r border-white/8 flex flex-col transform transition-transform duration-200 ease-in-out ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full sm:translate-x-0'}`}
             >
-                {/* Sidebar Header */}
-                <div className="p-4 border-b border-slate-800 flex items-center gap-3">
+                {/* Sidebar top bar */}
+                <div className="h-14 px-4 flex items-center gap-3 border-b border-white/8 shrink-0">
                     <Link
                         to="/"
-                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
-                        title="Retour"
+                        className="p-1.5 rounded-lg hover:bg-white/7 text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer"
+                        aria-label="Retour"
                     >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
-                        </svg>
+                        <ChevronLeft className="w-5 h-5" />
                     </Link>
-                    <h1 className="text-lg font-bold text-white">Messagerie</h1>
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <MessageSquare className="w-4 h-4 text-cyan-400 shrink-0" />
+                        <span className="text-sm font-semibold text-slate-50 truncate">NexusCare Chat</span>
+                    </div>
                 </div>
 
-                {/* Tabs */}
-                <div className="flex border-b border-slate-800">
-                    <button
-                        onClick={() => setSidebarTab('contacts')}
-                        className={`flex-1 py-3 text-sm font-medium transition-colors ${sidebarTab === 'contacts' ? 'text-teal-400 border-b-2 border-teal-400' : 'text-slate-400 hover:text-slate-200'}`}
-                    >
-                        Contacts
-                    </button>
-                    <button
-                        onClick={() => setSidebarTab('groups')}
-                        className={`flex-1 py-3 text-sm font-medium transition-colors ${sidebarTab === 'groups' ? 'text-teal-400 border-b-2 border-teal-400' : 'text-slate-400 hover:text-slate-200'}`}
-                    >
-                        Groupes
-                    </button>
-                </div>
-
-                {/* Search */}
-                <div className="p-3 border-b border-slate-800">
+                {/* Search bar */}
+                <div className="px-3 pt-3 pb-2 shrink-0">
                     <div className="relative">
-                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
                         <input
                             type="text"
-                            placeholder={sidebarTab === 'contacts' ? "Rechercher un contact..." : "Rechercher un groupe..."}
+                            placeholder="Rechercher…"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-9 pr-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                            className="w-full bg-white/6 border border-white/10 rounded-xl pl-8 pr-3 py-2 text-xs text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 transition-all duration-150"
                         />
                     </div>
                 </div>
 
-                {/* List */}
+                {/* Create group button */}
+                <div className="px-3 pb-3 shrink-0">
+                    <button
+                        onClick={() => setShowCreateGroup(true)}
+                        className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-cyan-600/10 border border-cyan-500/20 hover:bg-cyan-600/20 text-cyan-400 text-xs font-medium transition-colors duration-150 cursor-pointer"
+                    >
+                        <Plus className="w-3.5 h-3.5 shrink-0" />
+                        Créer groupe
+                    </button>
+                </div>
+
+                {/* Sections */}
                 <div className="flex-1 overflow-y-auto">
-                    {sidebarTab === 'contacts' ? (
-                        filteredUsers.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center h-full text-slate-500 p-6 text-center">
-                                <svg className="w-12 h-12 mb-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                                </svg>
-                                <p className="text-sm">Aucun contact</p>
+
+                    {/* Direct messages section */}
+                    <div className="px-3 pb-1">
+                        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5 px-1">
+                            <UserCircle className="w-3 h-3" />
+                            Messages directs
+                        </p>
+                        {filteredUsers.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-6 text-slate-600">
+                                <UserCircle className="w-8 h-8 mb-2 text-slate-700" />
+                                <p className="text-xs">Aucun contact</p>
                             </div>
                         ) : (
                             filteredUsers.map((u) => {
@@ -370,210 +410,216 @@ const Chat: React.FC = () => {
                                     <button
                                         key={u.id}
                                         onClick={() => selectConversation(u)}
-                                        className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-800 ${isSelected ? 'bg-slate-800 border-r-2 border-teal-500' : ''}`}
+                                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-colors duration-150 cursor-pointer mb-0.5 ${isSelected ? 'bg-white/8 border-l-2 border-cyan-500' : 'hover:bg-white/5'}`}
                                     >
-                                        <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center shrink-0">
-                                            <span className="text-white text-sm font-semibold">{getInitials(u)}</span>
+                                        <div className="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                                            <span className="text-cyan-300 text-[10px] font-bold">{getInitials(u)}</span>
                                         </div>
                                         <div className="min-w-0 flex-1">
-                                            <p className="text-sm font-medium text-white truncate">{u.fistName} {u.lastName}</p>
+                                            <p className="text-xs font-medium text-slate-100 truncate">{u.fistName} {u.lastName}</p>
                                             {getProfessionName(u) && (
-                                                <p className="text-xs text-slate-400 truncate">{getProfessionName(u)}</p>
+                                                <p className="text-[10px] text-slate-500 truncate">{getProfessionName(u)}</p>
                                             )}
                                         </div>
                                     </button>
                                 );
                             })
-                        )
-                    ) : (
-                        <>
-                            {/* New group button */}
-                            <button
-                                onClick={() => setShowCreateGroup(true)}
-                                className="w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-800 border-b border-slate-800"
-                            >
-                                <div className="w-10 h-10 rounded-full bg-teal-600 flex items-center justify-center shrink-0">
-                                    <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                                    </svg>
-                                </div>
-                                <p className="text-sm font-medium text-teal-400">Nouveau groupe</p>
-                            </button>
+                        )}
+                    </div>
 
-                            {filteredGroups.length === 0 ? (
-                                <div className="flex flex-col items-center justify-center py-12 text-slate-500 p-6 text-center">
-                                    <svg className="w-12 h-12 mb-3 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
-                                    <p className="text-sm">Aucun groupe</p>
-                                </div>
-                            ) : (
-                                filteredGroups.map((g) => {
-                                    const isSelected = conversationType === 'group' && selectedGroup?.id === g.id;
-                                    return (
-                                        <button
-                                            key={g.id}
-                                            onClick={() => selectGroupConversation(g)}
-                                            className={`w-full flex items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-slate-800 ${isSelected ? 'bg-slate-800 border-r-2 border-teal-500' : ''}`}
-                                        >
-                                            <div className="w-10 h-10 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
-                                                <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                                </svg>
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <p className="text-sm font-medium text-white truncate">{g.name}</p>
-                                                <p className="text-xs text-slate-400 truncate">{g.members.length} membre(s)</p>
-                                            </div>
-                                        </button>
-                                    );
-                                })
-                            )}
-                        </>
-                    )}
+                    {/* Groups section */}
+                    <div className="px-3 pt-3 pb-1">
+                        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-slate-500 mb-1.5 px-1">
+                            <Hash className="w-3 h-3" />
+                            Groupes
+                        </p>
+                        {filteredGroups.length === 0 ? (
+                            <div className="flex flex-col items-center justify-center py-6 text-slate-600">
+                                <Hash className="w-8 h-8 mb-2 text-slate-700" />
+                                <p className="text-xs">Aucun groupe</p>
+                            </div>
+                        ) : (
+                            filteredGroups.map((g) => {
+                                const isSelected = conversationType === 'group' && selectedGroup?.id === g.id;
+                                return (
+                                    <button
+                                        key={g.id}
+                                        onClick={() => selectGroupConversation(g)}
+                                        className={`w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl text-left transition-colors duration-150 cursor-pointer mb-0.5 ${isSelected ? 'bg-white/8 border-l-2 border-cyan-500' : 'hover:bg-white/5'}`}
+                                    >
+                                        <div className="w-8 h-8 rounded-full bg-white/7 border border-white/10 flex items-center justify-center shrink-0">
+                                            <Hash className="w-3.5 h-3.5 text-slate-400" />
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                            <p className="text-xs font-medium text-slate-100 truncate">{g.name}</p>
+                                            <p className="text-[10px] text-slate-500 truncate">{g.members.length} membre(s)</p>
+                                        </div>
+                                    </button>
+                                );
+                            })
+                        )}
+                    </div>
                 </div>
             </div>
 
-            {/* Overlay mobile pour fermer la sidebar */}
+            {/* Mobile overlay */}
             {isSidebarOpen && (
                 <div
-                    className="fixed inset-0 z-20 bg-black/40 sm:hidden"
+                    className="fixed inset-0 z-20 bg-slate-950/60 backdrop-blur-sm sm:hidden cursor-pointer"
                     onClick={() => setIsSidebarOpen(false)}
                 />
             )}
 
-            {/* Main Area */}
+            {/* ── MAIN AREA ── */}
             <div className="flex-1 flex flex-col min-w-0">
-                {/* Bouton d'ouverture du menu sur mobile */}
-                <div className="sm:hidden flex items-center justify-between px-4 py-3 bg-slate-900 border-b border-slate-800">
+
+                {/* Mobile top bar */}
+                <div className="sm:hidden h-14 flex items-center justify-between px-4 bg-white/3 border-b border-white/8 shrink-0">
                     <button
                         onClick={() => setIsSidebarOpen(true)}
-                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition-colors flex items-center gap-2"
+                        className="p-2 rounded-lg hover:bg-white/7 text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer flex items-center gap-2"
                     >
-                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-                        </svg>
-                        <span className="text-sm font-medium">Conversations</span>
+                        <Menu className="w-5 h-5" />
+                        <span className="text-sm font-medium text-slate-300">Conversations</span>
                     </button>
                     {hasConversation && (
-                        <span className="text-xs text-slate-400">Balayez vers la gauche pour voir la discussion</span>
+                        <span className="text-[10px] text-slate-500">Swipe ← pour la discussion</span>
                     )}
                 </div>
 
                 {!hasConversation ? (
-                    <div className="flex-1 flex flex-col items-center justify-center text-slate-500">
-                        <div className="w-20 h-20 rounded-full bg-slate-800 flex items-center justify-center mb-4">
-                            <svg className="w-10 h-10 text-slate-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-                            </svg>
+                    /* Empty state */
+                    <div className="flex-1 flex flex-col items-center justify-center text-slate-600 select-none">
+                        <div className="w-16 h-16 rounded-2xl bg-white/4 border border-white/8 flex items-center justify-center mb-4">
+                            <MessageSquare className="w-7 h-7 text-slate-600" />
                         </div>
-                        <p className="text-lg font-medium text-slate-400">Aucune conversation</p>
+                        <p className="text-base font-semibold text-slate-400">Aucune conversation</p>
                         <p className="text-sm text-slate-600 mt-1">Choisissez un contact ou un groupe</p>
                     </div>
                 ) : (
-                    <>
+                    <div className="flex flex-col flex-1 min-h-0">
+                        {/* Conversation header */}
                         {conversationHeader()}
 
-                        {/* Messages */}
-                        <div className="flex-1 overflow-y-auto p-6 flex flex-col gap-3">
+                        {/* Messages area */}
+                        <div className="flex-1 overflow-y-auto p-4 space-y-3">
                             {loading ? (
                                 <div className="flex items-center justify-center h-full">
-                                    <div className="w-8 h-8 border-2 border-teal-500 border-t-transparent rounded-full animate-spin"></div>
+                                    <div className="w-7 h-7 border-2 border-cyan-500 border-t-transparent rounded-full animate-spin" />
                                 </div>
                             ) : messages.length === 0 ? (
-                                <div className="flex items-center justify-center h-full text-slate-500">
-                                    <p className="text-sm">Aucun message. Commencez la conversation !</p>
+                                <div className="flex items-center justify-center h-full">
+                                    <p className="text-sm text-slate-500">Aucun message. Commencez la conversation !</p>
                                 </div>
                             ) : (
                                 messages.map((msg, index) => (
-                                    <div key={index} className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}>
+                                    <div key={index} className={`flex items-end gap-2 ${msg.isOwn ? 'justify-end' : 'justify-start'}`}>
+                                        {/* Other: avatar */}
                                         {!msg.isOwn && (
-                                            <span className="text-xs text-slate-400 mb-1 ml-1">{msg.senderName}</span>
+                                            <div className="w-6 h-6 rounded-full bg-white/7 border border-white/10 flex items-center justify-center shrink-0 mb-0.5">
+                                                <UserCircle className="w-4 h-4 text-slate-500" />
+                                            </div>
                                         )}
-                                        <div className={`max-w-xs lg:max-w-md xl:max-w-lg px-4 py-2 rounded-2xl text-sm text-white ${msg.isOwn ? 'bg-teal-600 rounded-br-sm' : 'bg-slate-700 rounded-bl-sm'}`}>
-                                            {msg.content}
+
+                                        <div className={`flex flex-col ${msg.isOwn ? 'items-end' : 'items-start'}`}>
+                                            {!msg.isOwn && (
+                                                <span className="text-[10px] text-slate-500 mb-1 ml-1">{msg.senderName}</span>
+                                            )}
+                                            <div className={msg.isOwn
+                                                ? 'bg-cyan-600/80 text-white rounded-2xl rounded-br-sm px-4 py-2.5 max-w-[75%] text-sm leading-relaxed'
+                                                : 'bg-white/7 text-slate-100 rounded-2xl rounded-bl-sm px-4 py-2.5 max-w-[75%] text-sm leading-relaxed'
+                                            }>
+                                                {msg.content}
+                                            </div>
+                                            <span className="text-[10px] text-slate-600 mt-1 mx-1">{formatTime(msg.timestamp)}</span>
                                         </div>
-                                        <span className="text-xs text-slate-500 mt-1 mx-1">{formatTime(msg.timestamp)}</span>
                                     </div>
                                 ))
                             )}
                             <div ref={messagesEndRef} />
                         </div>
 
-                        {/* Input */}
-                        <div className="px-6 py-4 bg-slate-900 border-t border-slate-800 flex items-center gap-3 shrink-0">
+                        {/* Input area */}
+                        <div className="bg-white/4 border-t border-white/8 p-4 flex items-end gap-3 shrink-0">
                             <input
                                 type="text"
-                                placeholder="Ecrire un message..."
+                                placeholder="Écrire un message…"
                                 value={messageInput}
                                 onChange={(e) => setMessageInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
-                                className="flex-1 bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-100 placeholder-slate-500 focus:outline-none focus:border-teal-500 transition-colors"
+                                className="flex-1 bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 text-sm resize-none transition-all duration-150"
                             />
                             <button
                                 onClick={sendMessage}
                                 disabled={!messageInput.trim()}
-                                className="p-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl transition-colors shrink-0"
-                                title="Envoyer"
+                                aria-label="Envoyer"
+                                className="p-2.5 bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 disabled:cursor-not-allowed text-white rounded-xl transition-colors duration-150 shrink-0 cursor-pointer"
                             >
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                                </svg>
+                                <Send className="w-4 h-4" />
                             </button>
                         </div>
-                    </>
+                    </div>
                 )}
             </div>
 
-            {/* Group Details Modal */}
+            {/* ── GROUP DETAILS MODAL ── */}
             {showGroupDetails && selectedGroup && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-                    <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-md mx-4 max-h-[85vh] flex flex-col">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                            <h2 className="text-lg font-bold text-white">Détails du groupe</h2>
-                            <button onClick={() => setShowGroupDetails(false)} className="text-slate-400 hover:text-white transition-colors">
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="w-full max-w-md backdrop-blur-2xl bg-[#0D1526] border border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
+
+                        {/* Modal header */}
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-white/8 shrink-0">
+                            <h2 className="text-base font-semibold text-slate-50">Détails du groupe</h2>
+                            <button
+                                onClick={() => setShowGroupDetails(false)}
+                                className="p-1.5 rounded-lg hover:bg-white/7 text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer"
+                                aria-label="Fermer"
+                            >
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
+                        {/* Modal body */}
                         <div className="p-6 space-y-5 overflow-y-auto flex-1">
-                            {/* Group name */}
+                            {/* Group identity */}
                             <div className="flex items-center gap-4">
-                                <div className="w-14 h-14 rounded-full bg-indigo-600 flex items-center justify-center shrink-0">
-                                    <svg className="w-7 h-7 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    </svg>
+                                <div className="w-14 h-14 rounded-2xl bg-cyan-600/10 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                                    <Hash className="w-6 h-6 text-cyan-400" />
                                 </div>
                                 <div>
-                                    <p className="text-xl font-bold text-white">{selectedGroup.name}</p>
-                                    <p className="text-sm text-slate-400">Créé par {selectedGroup.createdBy.firstName} {selectedGroup.createdBy.lastName}</p>
+                                    <p className="text-lg font-bold text-slate-50">{selectedGroup.name}</p>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                        Créé par {selectedGroup.createdBy.firstName} {selectedGroup.createdBy.lastName}
+                                    </p>
                                 </div>
                             </div>
 
                             {/* Members list */}
                             <div>
-                                <p className="text-sm font-medium text-slate-300 mb-3">{selectedGroup.members.length} membre(s)</p>
-                                <div className="space-y-1 border border-slate-700 rounded-lg overflow-hidden">
+                                <p className="text-xs font-semibold text-slate-400 uppercase tracking-widest mb-3">
+                                    {selectedGroup.members.length} membre(s)
+                                </p>
+                                <div className="space-y-1 border border-white/8 rounded-xl overflow-hidden">
                                     {selectedGroup.members.map((member) => {
                                         const isCreator = member.userId === selectedGroup.createdById;
                                         return (
-                                            <div key={member.id} className="flex items-center gap-3 px-4 py-3 hover:bg-slate-800/50 transition-colors">
-                                                <div className="w-9 h-9 rounded-full bg-teal-600 flex items-center justify-center shrink-0">
-                                                    <span className="text-white text-xs font-semibold">
+                                            <div key={member.id} className="flex items-center gap-3 px-4 py-3 hover:bg-white/4 transition-colors duration-150">
+                                                <div className="w-8 h-8 rounded-full bg-cyan-600/20 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                                                    <span className="text-cyan-300 text-[10px] font-bold">
                                                         {(member.user.firstName?.[0] || '').toUpperCase()}{(member.user.lastName?.[0] || '').toUpperCase()}
                                                     </span>
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm text-white truncate">
+                                                    <p className="text-sm text-slate-100 truncate">
                                                         {member.user.firstName} {member.user.lastName}
-                                                        {member.userId === user?.id && <span className="text-teal-400 ml-1">(vous)</span>}
+                                                        {member.userId === user?.id && <span className="text-cyan-400 ml-1">(vous)</span>}
                                                     </p>
-                                                    <p className="text-xs text-slate-400 truncate">{member.user.email}</p>
+                                                    <p className="text-[10px] text-slate-500 truncate">{member.user.email}</p>
                                                 </div>
                                                 {isCreator && (
-                                                    <span className="text-xs px-2 py-0.5 rounded-full bg-indigo-600/20 text-indigo-300">Admin</span>
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+                                                        Admin
+                                                    </span>
                                                 )}
                                             </div>
                                         );
@@ -582,10 +628,11 @@ const Chat: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-end p-6 border-t border-slate-800">
+                        {/* Modal footer */}
+                        <div className="flex items-center justify-end px-6 py-4 border-t border-white/8 shrink-0">
                             <button
                                 onClick={() => setShowGroupDetails(false)}
-                                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                                className="px-5 py-2.5 rounded-xl bg-white/7 hover:bg-white/12 text-slate-200 text-sm font-medium transition-colors duration-150 cursor-pointer"
                             >
                                 Fermer
                             </button>
@@ -594,58 +641,75 @@ const Chat: React.FC = () => {
                 </div>
             )}
 
-            {/* Create Group Modal */}
+            {/* ── CREATE GROUP MODAL ── */}
             {showCreateGroup && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-                    <div className="bg-slate-900 rounded-xl border border-slate-700 shadow-2xl w-full max-w-lg mx-4 max-h-[85vh] flex flex-col">
-                        <div className="flex items-center justify-between p-6 border-b border-slate-800">
-                            <h2 className="text-lg font-bold text-white">Nouveau groupe</h2>
-                            <button onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setSelectedMemberIds([]); setMemberSearchQuery(''); }} className="text-slate-400 hover:text-white transition-colors">
-                                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
+                <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+                    <div className="w-full max-w-md backdrop-blur-2xl bg-[#0D1526] border border-white/10 rounded-2xl shadow-2xl flex flex-col max-h-[85vh]">
+
+                        {/* Modal header */}
+                        <div className="flex items-center justify-between px-6 py-5 border-b border-white/8 shrink-0">
+                            <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-cyan-400" />
+                                <h2 className="text-base font-semibold text-slate-50">Nouveau groupe</h2>
+                            </div>
+                            <button
+                                onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setSelectedMemberIds([]); setMemberSearchQuery(''); }}
+                                className="p-1.5 rounded-lg hover:bg-white/7 text-slate-400 hover:text-slate-200 transition-colors duration-150 cursor-pointer"
+                                aria-label="Fermer"
+                            >
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="p-6 space-y-4 overflow-y-auto flex-1">
+                        {/* Modal body */}
+                        <div className="p-6 space-y-5 overflow-y-auto flex-1">
                             {/* Group name */}
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">Nom du groupe</label>
+                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                                    Nom du groupe
+                                </label>
                                 <input
                                     type="text"
                                     value={newGroupName}
                                     onChange={(e) => setNewGroupName(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors"
-                                    placeholder="Nom du groupe"
+                                    placeholder="Ex : Équipe cardiologie…"
+                                    className="w-full bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 text-sm transition-all duration-150"
                                 />
                             </div>
 
-                            {/* Member search */}
+                            {/* Member selection */}
                             <div>
-                                <label className="block text-sm font-medium text-slate-300 mb-2">
-                                    Membres ({selectedMemberIds.length} choisi(s))
+                                <label className="block text-xs font-semibold text-slate-400 uppercase tracking-widest mb-2">
+                                    Membres ({selectedMemberIds.length} sélectionné(s))
                                 </label>
-                                <input
-                                    type="text"
-                                    value={memberSearchQuery}
-                                    onChange={(e) => setMemberSearchQuery(e.target.value)}
-                                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500 transition-colors mb-2"
-                                    placeholder="Rechercher des membres..."
-                                />
 
-                                {/* Selected members chips */}
+                                {/* Member search */}
+                                <div className="relative mb-2">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-500 pointer-events-none" />
+                                    <input
+                                        type="text"
+                                        value={memberSearchQuery}
+                                        onChange={(e) => setMemberSearchQuery(e.target.value)}
+                                        placeholder="Rechercher des membres…"
+                                        className="w-full bg-white/6 border border-white/12 rounded-xl pl-8 pr-3 py-2.5 text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 text-sm transition-all duration-150"
+                                    />
+                                </div>
+
+                                {/* Selected chips */}
                                 {selectedMemberIds.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 mb-3">
+                                    <div className="flex flex-wrap gap-1.5 mb-3">
                                         {selectedMemberIds.map((id) => {
                                             const u = users.find((usr) => usr.id === id);
                                             if (!u) return null;
                                             return (
-                                                <span key={id} className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-teal-600/20 text-teal-300 text-xs">
+                                                <span key={id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/20 text-cyan-300 text-xs">
                                                     {u.fistName} {u.lastName}
-                                                    <button onClick={() => toggleMember(id)} className="hover:text-white">
-                                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
+                                                    <button
+                                                        onClick={() => toggleMember(id)}
+                                                        className="hover:text-white transition-colors cursor-pointer ml-0.5"
+                                                        aria-label={`Retirer ${u.fistName}`}
+                                                    >
+                                                        <X className="w-3 h-3" />
                                                     </button>
                                                 </span>
                                             );
@@ -654,28 +718,28 @@ const Chat: React.FC = () => {
                                 )}
 
                                 {/* Users list */}
-                                <div className="max-h-48 overflow-y-auto border border-slate-700 rounded-lg">
+                                <div className="max-h-44 overflow-y-auto border border-white/8 rounded-xl">
                                     {memberFilteredUsers.map((u) => {
                                         const isChecked = selectedMemberIds.includes(u.id);
                                         return (
                                             <button
                                                 key={u.id}
                                                 onClick={() => toggleMember(u.id)}
-                                                className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-slate-800 ${isChecked ? 'bg-teal-600/10' : ''}`}
+                                                className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors duration-150 cursor-pointer ${isChecked ? 'bg-cyan-600/10' : 'hover:bg-white/5'}`}
                                             >
-                                                <div className={`w-5 h-5 rounded border ${isChecked ? 'bg-teal-600 border-teal-600' : 'border-slate-600'} flex items-center justify-center shrink-0`}>
-                                                    {isChecked && (
-                                                        <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                                                        </svg>
-                                                    )}
+                                                {/* Checkbox */}
+                                                <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 transition-colors duration-150 ${isChecked ? 'bg-cyan-600 border-cyan-600' : 'border-white/20'}`}>
+                                                    {isChecked && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
                                                 </div>
-                                                <div className="w-8 h-8 rounded-full bg-teal-600 flex items-center justify-center shrink-0">
-                                                    <span className="text-white text-xs font-semibold">{getInitials(u)}</span>
+                                                {/* Avatar */}
+                                                <div className="w-7 h-7 rounded-full bg-cyan-600/20 border border-cyan-500/20 flex items-center justify-center shrink-0">
+                                                    <span className="text-cyan-300 text-[10px] font-bold">{getInitials(u)}</span>
                                                 </div>
                                                 <div className="min-w-0 flex-1">
-                                                    <p className="text-sm text-white truncate">{u.fistName} {u.lastName}</p>
-                                                    {getProfessionName(u) && <p className="text-xs text-slate-400 truncate">{getProfessionName(u)}</p>}
+                                                    <p className="text-sm text-slate-100 truncate">{u.fistName} {u.lastName}</p>
+                                                    {getProfessionName(u) && (
+                                                        <p className="text-[10px] text-slate-500 truncate">{getProfessionName(u)}</p>
+                                                    )}
                                                 </div>
                                             </button>
                                         );
@@ -684,17 +748,18 @@ const Chat: React.FC = () => {
                             </div>
                         </div>
 
-                        <div className="flex items-center justify-end gap-3 p-6 border-t border-slate-800">
+                        {/* Modal footer */}
+                        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-white/8 shrink-0">
                             <button
                                 onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setSelectedMemberIds([]); setMemberSearchQuery(''); }}
-                                className="px-5 py-2.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white transition-colors"
+                                className="px-5 py-2.5 rounded-xl bg-white/7 hover:bg-white/12 text-slate-200 text-sm font-medium transition-colors duration-150 cursor-pointer"
                             >
                                 Annuler
                             </button>
                             <button
                                 onClick={handleCreateGroup}
                                 disabled={!newGroupName.trim() || selectedMemberIds.length === 0}
-                                className="px-5 py-2.5 rounded-lg bg-teal-600 hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-medium transition-colors"
+                                className="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 disabled:opacity-30 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors duration-150 cursor-pointer"
                             >
                                 Créer le groupe
                             </button>

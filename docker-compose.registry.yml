@@ -1,0 +1,33 @@
+# docker-compose.registry.yml
+# Override : remplace les build locaux par les images du GitLab Registry
+# Usage : docker compose -f docker-compose.prod.yml -f docker-compose.registry.yml --env-file .env.prod up -d
+
+services:
+
+  rest-api:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/rest-api:${TAG:-latest}
+    build: !reset null
+
+  websocket:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/websocket:${TAG:-latest}
+    build: !reset null
+
+  visio-app:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/visio-app:${TAG:-latest}
+    build: !reset null
+
+  generation_rapport:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/generation-rapport:${TAG:-latest}
+    build: !reset null
+
+  completion-formulaire:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/completion-formulaire:${TAG:-latest}
+    build: !reset null
+
+  transcription-api:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/transcription-api:${TAG:-latest}
+    build: !reset null
+
+  olga-admin:
+    image: ${CI_REGISTRY_IMAGE:-registry.gitlab.com/TONGROUPE/oncocollab}/olga-admin:${TAG:-latest}
+    build: !reset null

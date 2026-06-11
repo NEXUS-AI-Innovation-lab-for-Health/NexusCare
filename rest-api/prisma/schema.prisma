@@ -81,10 +81,11 @@ model Meeting {
   scheduledDate DateTime
   startedAt     DateTime?
   duration      Int
-  groupChatId   String?
-  groupChat     Group?        @relation(fields: [groupChatId], references: [id])
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  groupChatId      String?
+  groupChat        Group?        @relation(fields: [groupChatId], references: [id])
+  collaborationId  String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   participants MeetingParticipant[]
 

@@ -1,5 +1,15 @@
 import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
+import {
+    Video,
+    VideoOff,
+    Mic,
+    MicOff,
+    Settings,
+    ChevronLeft,
+    CheckCircle,
+    AlertCircle,
+} from 'lucide-react';
 
 const PreMeeting: React.FC = () => {
     const navigate = useNavigate();
@@ -69,108 +79,186 @@ const PreMeeting: React.FC = () => {
     };
 
     return (
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
-            <div className="w-full max-w-2xl">
-                <h2 className="text-2xl font-bold text-center mb-6">Prêt à rejoindre ?</h2>
+        <div className="min-h-screen bg-[#080D1A] text-slate-50 flex flex-col">
+            {/* Decorative radial glow */}
+            <div
+                className="pointer-events-none fixed inset-0 z-0"
+                style={{
+                    background:
+                        'radial-gradient(ellipse 80% 40% at 50% -10%, rgba(6,182,212,0.13) 0%, transparent 70%)',
+                }}
+            />
 
-                <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden mb-6">
-                    <div className="aspect-video bg-slate-800 relative">
-                        <video
-                            ref={videoRef}
-                            autoPlay
-                            playsInline
-                            muted
-                            className={`w-full h-full object-cover ${!cam ? 'hidden' : ''}`}
-                        />
-                        {!cam && (
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div className="w-24 h-24 bg-slate-700 rounded-full flex items-center justify-center">
-                                    <svg className="w-12 h-12 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                                    </svg>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+            {/* Page content */}
+            <div className="relative z-10 w-full max-w-4xl mx-auto px-4 py-8 flex flex-col flex-1">
 
-                    <div className="p-4 flex items-center justify-center gap-4">
-                        <button
-                            onClick={() => setMic(!mic)}
-                            className={`p-3 rounded-full transition-colors ${mic ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-500 hover:bg-red-600'}`}
-                        >
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                {mic ? (
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                                ) : (
-                                    <>
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" />
-                                    </>
-                                )}
-                            </svg>
-                        </button>
-
-                        <button
-                            onClick={() => setCam(!cam)}
-                            className={`p-3 rounded-full transition-colors ${cam ? 'bg-slate-700 hover:bg-slate-600' : 'bg-red-500 hover:bg-red-600'}`}
-                        >
-                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                {cam ? (
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                ) : (
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
-                                )}
-                            </svg>
-                        </button>
-                    </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4 mb-6">
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Caméra</label>
-                        <select
-                            value={videoDeviceId}
-                            onChange={(e) => setVideoDeviceId(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500"
-                        >
-                            <option value="">Par défaut</option>
-                            {videoDevices.map((device) => (
-                                <option key={device.deviceId} value={device.deviceId}>
-                                    {device.label || `Caméra ${device.deviceId.slice(0, 8)}`}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-slate-300 mb-2">Microphone</label>
-                        <select
-                            value={audioDeviceId}
-                            onChange={(e) => setAudioDeviceId(e.target.value)}
-                            className="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-2.5 text-white focus:outline-none focus:border-teal-500"
-                        >
-                            <option value="">Par défaut</option>
-                            {audioDevices.map((device) => (
-                                <option key={device.deviceId} value={device.deviceId}>
-                                    {device.label || `Micro ${device.deviceId.slice(0, 8)}`}
-                                </option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
-
-                <div className="flex gap-4">
+                {/* Header */}
+                <div className="flex items-center gap-4 mb-8">
                     <button
                         onClick={handleCancel}
-                        className="flex-1 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-lg font-medium transition-colors"
+                        aria-label="Retour"
+                        className="p-2.5 rounded-xl backdrop-blur-xl bg-white/4 border border-white/8 text-slate-400 hover:text-slate-50 hover:bg-white/8 transition-all duration-200 cursor-pointer"
                     >
-                        Annuler
+                        <ChevronLeft className="w-5 h-5" />
                     </button>
-                    <button
-                        onClick={handleJoin}
-                        className="flex-1 py-3 bg-teal-600 hover:bg-teal-500 text-white rounded-lg font-medium transition-colors"
-                    >
-                        Rejoindre la réunion
-                    </button>
+                    <div className="flex items-center gap-3">
+                        <h1 className="text-xl font-semibold text-slate-50">Préparer la réunion</h1>
+                        {meetingId && (
+                            <span className="text-xs font-medium px-3 py-1 rounded-full bg-cyan-600/20 text-cyan-400 border border-cyan-500/20">
+                                #{meetingId}
+                            </span>
+                        )}
+                    </div>
+                </div>
+
+                {/* Main 2-column grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 flex-1">
+
+                    {/* Left: Video preview card */}
+                    <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-5 flex flex-col gap-4">
+
+                        {/* Video element — 16:9 aspect */}
+                        <div className="relative w-full rounded-xl overflow-hidden bg-black" style={{ aspectRatio: '16/9' }}>
+                            <video
+                                ref={videoRef}
+                                autoPlay
+                                playsInline
+                                muted
+                                className={`w-full h-full object-cover${!cam ? ' hidden' : ''}`}
+                            />
+                            {!cam && (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-slate-900/80">
+                                    <div className="w-16 h-16 rounded-full bg-white/6 border border-white/8 flex items-center justify-center">
+                                        <VideoOff className="w-7 h-7 text-slate-400" />
+                                    </div>
+                                    <span className="text-sm text-slate-400 font-medium">Caméra désactivée</span>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* Toggle controls row */}
+                        <div className="flex items-center justify-center gap-3">
+                            <button
+                                onClick={() => setCam(!cam)}
+                                aria-label={cam ? 'Désactiver la caméra' : 'Activer la caméra'}
+                                className={`p-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 text-sm font-medium text-white ${cam ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-slate-700 hover:bg-slate-600'}`}
+                            >
+                                {cam ? <Video className="w-5 h-5" /> : <VideoOff className="w-5 h-5" />}
+                                <span>{cam ? 'Caméra' : 'Caméra off'}</span>
+                            </button>
+                            <button
+                                onClick={() => setMic(!mic)}
+                                aria-label={mic ? 'Désactiver le microphone' : 'Activer le microphone'}
+                                className={`p-3 rounded-xl transition-all duration-200 cursor-pointer flex items-center gap-2 text-sm font-medium text-white ${mic ? 'bg-cyan-600 hover:bg-cyan-500' : 'bg-slate-700 hover:bg-slate-600'}`}
+                            >
+                                {mic ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+                                <span>{mic ? 'Micro' : 'Micro off'}</span>
+                            </button>
+                        </div>
+
+                        {/* Status indicator badges */}
+                        <div className="flex items-center gap-2">
+                            <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${cam ? 'bg-cyan-600/10 border-cyan-500/20 text-cyan-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                                {cam
+                                    ? <CheckCircle className="w-3.5 h-3.5" />
+                                    : <AlertCircle className="w-3.5 h-3.5" />
+                                }
+                                {cam ? 'Caméra active' : 'Caméra désactivée'}
+                            </div>
+                            <div className={`flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-full border ${mic ? 'bg-cyan-600/10 border-cyan-500/20 text-cyan-400' : 'bg-red-500/10 border-red-500/20 text-red-400'}`}>
+                                {mic
+                                    ? <CheckCircle className="w-3.5 h-3.5" />
+                                    : <AlertCircle className="w-3.5 h-3.5" />
+                                }
+                                {mic ? 'Micro actif' : 'Micro désactivé'}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Right: Settings card */}
+                    <div className="backdrop-blur-xl bg-white/4 border border-white/8 rounded-2xl p-5 flex flex-col gap-6">
+
+                        {/* Section title */}
+                        <div className="flex items-center gap-2.5">
+                            <Settings className="w-5 h-5 text-cyan-400" />
+                            <h2 className="text-base font-semibold text-slate-50">Paramètres</h2>
+                        </div>
+
+                        {/* Camera select */}
+                        <div className="flex flex-col gap-2">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-400">
+                                <Video className="w-4 h-4" />
+                                Caméra
+                            </label>
+                            <select
+                                value={videoDeviceId}
+                                onChange={(e) => setVideoDeviceId(e.target.value)}
+                                className="bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 w-full cursor-pointer"
+                            >
+                                <option value="">Par défaut</option>
+                                {videoDevices.map((device) => (
+                                    <option key={device.deviceId} value={device.deviceId}>
+                                        {device.label || `Caméra ${device.deviceId.slice(0, 8)}`}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Microphone select */}
+                        <div className="flex flex-col gap-2">
+                            <label className="flex items-center gap-2 text-sm font-medium text-slate-400">
+                                <Mic className="w-4 h-4" />
+                                Microphone
+                            </label>
+                            <select
+                                value={audioDeviceId}
+                                onChange={(e) => setAudioDeviceId(e.target.value)}
+                                className="bg-white/6 border border-white/12 rounded-xl px-4 py-2.5 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-500/40 w-full cursor-pointer"
+                            >
+                                <option value="">Par défaut</option>
+                                {audioDevices.map((device) => (
+                                    <option key={device.deviceId} value={device.deviceId}>
+                                        {device.label || `Micro ${device.deviceId.slice(0, 8)}`}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Device test status */}
+                        <div className="backdrop-blur-xl bg-white/3 border border-white/6 rounded-xl p-4 flex flex-col gap-2.5">
+                            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">État des périphériques</p>
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-300 flex items-center gap-2">
+                                    <Video className="w-4 h-4 text-slate-500" />
+                                    Caméra
+                                </span>
+                                <span className={`text-xs font-medium ${cam ? 'text-cyan-400' : 'text-red-400'}`}>
+                                    {cam ? 'Activée' : 'Désactivée'}
+                                </span>
+                            </div>
+                            <div className="h-px bg-white/6" />
+                            <div className="flex items-center justify-between">
+                                <span className="text-sm text-slate-300 flex items-center gap-2">
+                                    <Mic className="w-4 h-4 text-slate-500" />
+                                    Microphone
+                                </span>
+                                <span className={`text-xs font-medium ${mic ? 'text-cyan-400' : 'text-red-400'}`}>
+                                    {mic ? 'Activé' : 'Désactivé'}
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Spacer to push join button to bottom */}
+                        <div className="flex-1" />
+
+                        {/* Join button */}
+                        <button
+                            onClick={handleJoin}
+                            className="bg-green-600 hover:bg-green-500 text-white font-bold px-8 py-3 rounded-xl transition-all duration-200 cursor-pointer text-lg w-full"
+                        >
+                            Rejoindre la réunion
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
